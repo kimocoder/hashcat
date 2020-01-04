@@ -1210,7 +1210,7 @@ DECLSPEC void point_double (u32 x[8], u32 y[8], u32 z[8])
   z[7] = t3[7];
 }
 
-DECLSPEC void point_add (u32 x1[8], u32 y1[8], u32 z1[8], const u32 x2[8], const u32 y2[8], const u32 z2[8])
+DECLSPEC void point_add (u32 x1[8], u32 y1[8], u32 z1[8], const u32 x2[8], const u32 y2[8])
 {
   // How often does this really happen? it should "almost" never happen (but would be safer)
 
@@ -1250,7 +1250,7 @@ DECLSPEC void point_add (u32 x1[8], u32 y1[8], u32 z1[8], const u32 x2[8], const
   }
   */
 
-  // if x1 == x2 and y2 == y2 and z2 == z2 we need to double instead?
+  // if x1 == x2 and y1 == y2 and z1 == z2 we need to double instead?
 
   // x1/y1/z1:
 
@@ -1287,7 +1287,7 @@ DECLSPEC void point_add (u32 x1[8], u32 y1[8], u32 z1[8], const u32 x2[8], const
   t3[6] = z1[6];
   t3[7] = z1[7];
 
-  // x2/y2/z2:
+  // x2/y2:
 
   u32 t4[8];
 
@@ -1313,15 +1313,6 @@ DECLSPEC void point_add (u32 x1[8], u32 y1[8], u32 z1[8], const u32 x2[8], const
 
   u32 t6[8];
 
-  t6[0] = z2[0];
-  t6[1] = z2[1];
-  t6[2] = z2[2];
-  t6[3] = z2[3];
-  t6[4] = z2[4];
-  t6[5] = z2[5];
-  t6[6] = z2[6];
-  t6[7] = z2[7];
-
   u32 t7[8];
 
   mul_mod (t7, t3, t3); // t7 = z1^2
@@ -1330,16 +1321,8 @@ DECLSPEC void point_add (u32 x1[8], u32 y1[8], u32 z1[8], const u32 x2[8], const
   mul_mod (t5, t5, t3); // t5 = y2 * z1
   mul_mod (t5, t5, t7); // t5 = y2 * z1^3 = D
 
-  mul_mod (t7, t6, t6); // t7 = z2^2
-
-  mul_mod (t1, t1, t7); // t1 = x1 * z2^2
-
-  mul_mod (t2, t2, t6); // t2 = y1 * z2
-  mul_mod (t2, t2, t7); // t2 = y1 * z2^3 = C
-
   sub_mod (t1, t1, t4); // t1 = A - B = E
 
-  mul_mod (t3, t6, t3); // t3 = z1 * z2
   mul_mod (t3, t1, t3); // t3 = z1 * z2 * E = Z3
 
   sub_mod (t2, t2, t5); // t2 = C - D = F
@@ -1416,364 +1399,223 @@ DECLSPEC void point_get_coords (secp256k1_t *r, const u32 x[8], const u32 y[8])
   y1[6] = y[6];
   y1[7] = y[7];
 
-  u32 t1[8];
-
-  t1[0] = y[0];
-  t1[1] = y[1];
-  t1[2] = y[2];
-  t1[3] = y[3];
-  t1[4] = y[4];
-  t1[5] = y[5];
-  t1[6] = y[6];
-  t1[7] = y[7];
-
-  // we use jacobian forms and the convertion with z = 1 is basically a NO-OP:
-  // X = X1 * z^2 = X1, Y = Y1 * z^3 = Y1
-
-  // https://eprint.iacr.org/2011/338.pdf
-
-  // initial jacobian doubling
-
-  u32 t2[8];
-  u32 t3[8];
-  u32 t4[8];
-
-  mul_mod (t2, x1, x1); // t2 = x1^2
-  mul_mod (t3, y1, y1); // t3 = y1^2
-
-  mul_mod (x1, x1, t3); // x1 = x1*y1^2
-
-  mul_mod (t3, t3, t3); // t3 = t3^2 = y1^4
-
-  // here the z^2 and z^4 is not needed for a = 0 (and furthermore we have z = 1)
-
-  add_mod (y1, t2, t2); // y1 = 2 * t2 = 2 * x1^2
-  add_mod (t2, y1, t2); // t2 = 3 * t2 = 3 * x1^2
-
-  // a * z^4 = 0 * 1^4 = 0
-
-  // don't discard the least significant bit it's important too!
-
-  u32 c = 0;
-
-  if (t2[0] & 1)
-  {
-    u32 t[8];
-
-    t[0] = SECP256K1_P0;
-    t[1] = SECP256K1_P1;
-    t[2] = SECP256K1_P2;
-    t[3] = SECP256K1_P3;
-    t[4] = SECP256K1_P4;
-    t[5] = SECP256K1_P5;
-    t[6] = SECP256K1_P6;
-    t[7] = SECP256K1_P7;
-
-    c = add (t2, t2, t); // t2 + SECP256K1_P
-  }
-
-  // right shift (t2 / 2):
-
-  t2[0] = t2[0] >> 1 | t2[1] << 31;
-  t2[1] = t2[1] >> 1 | t2[2] << 31;
-  t2[2] = t2[2] >> 1 | t2[3] << 31;
-  t2[3] = t2[3] >> 1 | t2[4] << 31;
-  t2[4] = t2[4] >> 1 | t2[5] << 31;
-  t2[5] = t2[5] >> 1 | t2[6] << 31;
-  t2[6] = t2[6] >> 1 | t2[7] << 31;
-  t2[7] = t2[7] >> 1 | c     << 31;
-
-  mul_mod (t4, t2, t2); // t4 = t2^2 = (3/2*x1^2)^2
-
-  add_mod (y1, x1, x1); // y1 = 2 * x1_new
-
-  sub_mod (t4, t4, y1); // t4 = t4 - y1_new
-  sub_mod (x1, x1, t4); // x1 = x1 - t4
-
-  mul_mod (t2, t2, x1); // t2 = t2 * x1_new
-
-  sub_mod (x1, t2, t3); // x1 = t2 - t3
-
-  // => X = t4, Y = x1, Z = t1:
-  // (and t2, t3 can now be safely reused)
-
-  // convert to affine coordinates (to save some bytes copied around) and store it:
-
-  u32 inv[8];
-
-  inv[0] = t1[0];
-  inv[1] = t1[1];
-  inv[2] = t1[2];
-  inv[3] = t1[3];
-  inv[4] = t1[4];
-  inv[5] = t1[5];
-  inv[6] = t1[6];
-  inv[7] = t1[7];
-
-  inv_mod (inv);
-
-  mul_mod (t2, inv, inv); // t2 = inv^2
-  mul_mod (t3, inv, t2);  // t3 = inv^3
-
-  // output to y1
-
-  mul_mod (t3, t3, x1);
-
-  r->xy[31] = t3[7];
-  r->xy[30] = t3[6];
-  r->xy[29] = t3[5];
-  r->xy[28] = t3[4];
-  r->xy[27] = t3[3];
-  r->xy[26] = t3[2];
-  r->xy[25] = t3[1];
-  r->xy[24] = t3[0];
-
-  // output to x1
-
-  mul_mod (t3, t2, t4);
-
-  r->xy[23] = t3[7];
-  r->xy[22] = t3[6];
-  r->xy[21] = t3[5];
-  r->xy[20] = t3[4];
-  r->xy[19] = t3[3];
-  r->xy[18] = t3[2];
-  r->xy[17] = t3[1];
-  r->xy[16] = t3[0];
-
-  // also store orginal x/y:
-
-  r->xy[15] = y[7];
-  r->xy[14] = y[6];
-  r->xy[13] = y[5];
-  r->xy[12] = y[4];
-  r->xy[11] = y[3];
-  r->xy[10] = y[2];
-  r->xy[ 9] = y[1];
-  r->xy[ 8] = y[0];
-
-  r->xy[ 7] = x[7];
-  r->xy[ 6] = x[6];
-  r->xy[ 5] = x[5];
-  r->xy[ 4] = x[4];
-  r->xy[ 3] = x[3];
-  r->xy[ 2] = x[2];
-  r->xy[ 1] = x[1];
-  r->xy[ 0] = x[0];
-
-
-  // do the double of the double (i.e. "triple") too, just in case we need it in the main loop:
-
-  point_double (t4, x1, t1);
-
-  // convert to affine coordinates and store it:
-
-  inv_mod (t1);
-
-  mul_mod (t2, t1, t1); // t2 = t1^2
-  mul_mod (t3, t1, t2); // t3 = t1^3
-
-  // output to y2
-
-  mul_mod (t3, t3, x1);
-
-  r->xy[47] = t3[7];
-  r->xy[46] = t3[6];
-  r->xy[45] = t3[5];
-  r->xy[44] = t3[4];
-  r->xy[43] = t3[3];
-  r->xy[42] = t3[2];
-  r->xy[41] = t3[1];
-  r->xy[40] = t3[0];
-
-  // output to x2
-
-  mul_mod (t3, t2, t4);
-
-  r->xy[39] = t3[7];
-  r->xy[38] = t3[6];
-  r->xy[37] = t3[5];
-  r->xy[36] = t3[4];
-  r->xy[35] = t3[3];
-  r->xy[34] = t3[2];
-  r->xy[33] = t3[1];
-  r->xy[32] = t3[0];
-}
-
-DECLSPEC void point_mul (u32 r[9], const u32 k[8], GLOBAL_AS const secp256k1_t *tmps)
-{
-  // first check the position of the least significant bit
-
-  // the following fancy shift operation just checks the last 2 bits, finds the
-  // least significant bit (set to 1) and updates idx according to this table:
-  // last bits  | idx
-  // 0bxxxxxx00 | 2
-  // 0bxxxxxx01 | 0
-  // 0bxxxxxx10 | 1
-  // 0bxxxxxx11 | 0
-
-  const u32 idx = (0x0102 >> ((k[0] & 3) << 2)) & 3;
-
-  const u32 offset = idx << 4; // * (8 + 8) = 16 (=> offset of 16 u32 = 16 * 4 bytes)
-
-  u32 x1[8];
-
-  x1[0] = tmps->xy[offset +  0];
-  x1[1] = tmps->xy[offset +  1];
-  x1[2] = tmps->xy[offset +  2];
-  x1[3] = tmps->xy[offset +  3];
-  x1[4] = tmps->xy[offset +  4];
-  x1[5] = tmps->xy[offset +  5];
-  x1[6] = tmps->xy[offset +  6];
-  x1[7] = tmps->xy[offset +  7];
-
-  u32 y1[8];
-
-  y1[0] = tmps->xy[offset +  8];
-  y1[1] = tmps->xy[offset +  9];
-  y1[2] = tmps->xy[offset + 10];
-  y1[3] = tmps->xy[offset + 11];
-  y1[4] = tmps->xy[offset + 12];
-  y1[5] = tmps->xy[offset + 13];
-  y1[6] = tmps->xy[offset + 14];
-  y1[7] = tmps->xy[offset + 15];
-
   u32 z1[8] = { 0 };
 
   z1[0] = 1;
 
-  // do NOT allow to overflow the tmps->xy buffer:
+  // r->xy[0..15] = 1*(x, y)
 
-  u32 final_offset = offset;
+  r->xy[ 0] = x[0];
+  r->xy[ 1] = x[1];
+  r->xy[ 2] = x[2];
+  r->xy[ 3] = x[3];
+  r->xy[ 4] = x[4];
+  r->xy[ 5] = x[5];
+  r->xy[ 6] = x[6];
+  r->xy[ 7] = x[7];
 
-  if (final_offset > 16) final_offset = 16;
+  r->xy[ 8] = y[0];
+  r->xy[ 9] = y[1];
+  r->xy[10] = y[2];
+  r->xy[11] = y[3];
+  r->xy[12] = y[4];
+  r->xy[13] = y[5];
+  r->xy[14] = y[6];
+  r->xy[15] = y[7];
 
-  u32 x2[8];
+  // r->xy[16..31] = 2*(x, y)
 
-  x2[0] = tmps->xy[final_offset + 16];
-  x2[1] = tmps->xy[final_offset + 17];
-  x2[2] = tmps->xy[final_offset + 18];
-  x2[3] = tmps->xy[final_offset + 19];
-  x2[4] = tmps->xy[final_offset + 20];
-  x2[5] = tmps->xy[final_offset + 21];
-  x2[6] = tmps->xy[final_offset + 22];
-  x2[7] = tmps->xy[final_offset + 23];
+  point_double (x1, y1, z1);
 
-  u32 y2[8];
+  // convert to affine coordinates and store it:
 
-  y2[0] = tmps->xy[final_offset + 24];
-  y2[1] = tmps->xy[final_offset + 25];
-  y2[2] = tmps->xy[final_offset + 26];
-  y2[3] = tmps->xy[final_offset + 27];
-  y2[4] = tmps->xy[final_offset + 28];
-  y2[5] = tmps->xy[final_offset + 29];
-  y2[6] = tmps->xy[final_offset + 30];
-  y2[7] = tmps->xy[final_offset + 31];
+  inv_mod (z1);
 
-  u32 z2[8] = { 0 };
+  mul_mod (z2, z1, z1); // z2 = z1^2
+  mul_mod (z1, z1, z2); // z1 = z1^3
 
-  z2[0] = 1;
+  // output to x1
 
-  // ... then find out the position of the most significant bit
+  mul_mod (x1, x1, z2);
 
-  int loop_start = idx;
-  int loop_end   = 255;
+  r->xy[16] = x1[0];
+  r->xy[17] = x1[1];
+  r->xy[18] = x1[2];
+  r->xy[19] = x1[3];
+  r->xy[20] = x1[4];
+  r->xy[21] = x1[5];
+  r->xy[22] = x1[6];
+  r->xy[23] = x1[7];
 
-  for (int i = 255; i > 0; i--) // or use: i > idx
-  {
-    u32 idx = i >> 5; // the current u32 (each consisting of 2^5 = 32 bits) to inspect
+  // output to y1
 
-    u32 mask = 1 << (i & 0x1f);
+  mul_mod (y1, y1, z1);
 
-    if (k[idx] & mask) break; // found it !
+  r->xy[24] = y1[0];
+  r->xy[25] = y1[1];
+  r->xy[26] = y1[2];
+  r->xy[27] = y1[3];
+  r->xy[28] = y1[4];
+  r->xy[29] = y1[5];
+  r->xy[30] = y1[6];
+  r->xy[31] = y1[7];
 
-    loop_end--;
-  }
+  // r->xy[32..47] = 3*(x, y)
 
-  /*
-   * Start
-   */
+  point_add (x1, y1, z1, x, y);
 
-  // "just" double until we find the first add (where the first bit is set):
+  // convert to affine coordinates and store it:
 
-  for (int pos = loop_start; pos < loop_end; pos++)
-  {
-    const u32 idx = pos >> 5;
+  inv_mod (z1);
 
-    const u32 mask = 1 << (pos & 0x1f);
+  mul_mod (z2, z1, z1); // z2 = z1^2
+  mul_mod (z1, z1, z2); // z1 = z1^3
 
-    if (k[idx] & mask) break;
+  // output to x1
 
-    point_double (x2, y2, z2);
+  mul_mod (x1, x1, z2);
 
-    loop_start++;
-  }
+  r->xy[32] = x1[0];
+  r->xy[33] = x1[1];
+  r->xy[34] = x1[2];
+  r->xy[35] = x1[3];
+  r->xy[36] = x1[4];
+  r->xy[37] = x1[5];
+  r->xy[38] = x1[6];
+  r->xy[39] = x1[7];
 
-  // for case 0 and 1 we can skip the double (we already did it in the host)
+  // output to y1
 
-  if (idx > 1)
-  {
-    x1[0] = x2[0];
-    x1[1] = x2[1];
-    x1[2] = x2[2];
-    x1[3] = x2[3];
-    x1[4] = x2[4];
-    x1[5] = x2[5];
-    x1[6] = x2[6];
-    x1[7] = x2[7];
+  mul_mod (y1, y1, z1);
 
-    y1[0] = y2[0];
-    y1[1] = y2[1];
-    y1[2] = y2[2];
-    y1[3] = y2[3];
-    y1[4] = y2[4];
-    y1[5] = y2[5];
-    y1[6] = y2[6];
-    y1[7] = y2[7];
+  r->xy[40] = y1[0];
+  r->xy[41] = y1[1];
+  r->xy[42] = y1[2];
+  r->xy[43] = y1[3];
+  r->xy[44] = y1[4];
+  r->xy[45] = y1[5];
+  r->xy[46] = y1[6];
+  r->xy[47] = y1[7];
+}
 
-    z1[0] = z2[0];
-    z1[1] = z2[1];
-    z1[2] = z2[2];
-    z1[3] = z2[3];
-    z1[4] = z2[4];
-    z1[5] = z2[5];
-    z1[6] = z2[6];
-    z1[7] = z2[7];
+DECLSPEC void point_mul (u32 r[9], const u32 k[8], GLOBAL_AS const secp256k1_t *tmps)
+{
+  u32 base_x[3][8];
 
-    point_double (x2, y2, z2);
-  }
+  u32 base_y[3][8];
 
-  // main loop (right-to-left binary algorithm):
+  base_x[0][0] = tmps->xy[ 0];
+  base_x[0][1] = tmps->xy[ 1];
+  base_x[0][2] = tmps->xy[ 2];
+  base_x[0][3] = tmps->xy[ 3];
+  base_x[0][4] = tmps->xy[ 4];
+  base_x[0][5] = tmps->xy[ 5];
+  base_x[0][6] = tmps->xy[ 6];
+  base_x[0][7] = tmps->xy[ 7];
 
-  for (int pos = loop_start + 1; pos < loop_end; pos++)
+  base_y[0][0] = tmps->xy[ 8];
+  base_y[0][1] = tmps->xy[ 9];
+  base_y[0][2] = tmps->xy[10];
+  base_y[0][3] = tmps->xy[11];
+  base_y[0][4] = tmps->xy[12];
+  base_y[0][5] = tmps->xy[13];
+  base_y[0][6] = tmps->xy[14];
+  base_y[0][7] = tmps->xy[15];
+
+  base_x[1][0] = tmps->xy[16];
+  base_x[1][1] = tmps->xy[17];
+  base_x[1][2] = tmps->xy[18];
+  base_x[1][3] = tmps->xy[19];
+  base_x[1][4] = tmps->xy[20];
+  base_x[1][5] = tmps->xy[21];
+  base_x[1][6] = tmps->xy[22];
+  base_x[1][7] = tmps->xy[23];
+
+  base_y[1][0] = tmps->xy[24];
+  base_y[1][1] = tmps->xy[25];
+  base_y[1][2] = tmps->xy[26];
+  base_y[1][3] = tmps->xy[27];
+  base_y[1][4] = tmps->xy[28];
+  base_y[1][5] = tmps->xy[29];
+  base_y[1][6] = tmps->xy[30];
+  base_y[1][7] = tmps->xy[31];
+
+  base_x[2][0] = tmps->xy[32];
+  base_x[2][1] = tmps->xy[33];
+  base_x[2][2] = tmps->xy[34];
+  base_x[2][3] = tmps->xy[35];
+  base_x[2][4] = tmps->xy[36];
+  base_x[2][5] = tmps->xy[37];
+  base_x[2][6] = tmps->xy[38];
+  base_x[2][7] = tmps->xy[39];
+
+  base_y[2][0] = tmps->xy[40];
+  base_y[2][1] = tmps->xy[41];
+  base_y[2][2] = tmps->xy[42];
+  base_y[2][3] = tmps->xy[43];
+  base_y[2][4] = tmps->xy[44];
+  base_y[2][5] = tmps->xy[45];
+  base_y[2][6] = tmps->xy[46];
+  base_y[2][7] = tmps->xy[47];
+
+  u32 x[8] = { 0 };
+
+  u32 y[8] = { 0 };
+
+  u32 z[8] = { 0 };
+
+  z[0] = 1;
+
+  int zero = 1;
+
+  // main loop (left-to-right binary algorithm):
+
+  for (int i = 254; i >= 0; i -= 2)
   {
     u32 idx = pos >> 5;
 
-    u32 mask = 1 << (pos & 0x1f);
+    u32 bits = (k[idx] >> (pos & 0x1f)) & 3;
+
+    if (!zero)
+    {
+      point_double (x, y, z);
+      point_double (x, y, z);
+    }
 
     // add only if needed:
 
-    if (k[idx] & mask)
+    if (bits)
     {
-      point_add (x1, y1, z1, x2, y2, z2);
+      bits--;
+
+      if (zero)
+      {
+        zero = 0;
+
+        x[0] = base_x[bits][0];
+        x[1] = base_x[bits][1];
+        x[2] = base_x[bits][2];
+        x[3] = base_x[bits][3];
+        x[4] = base_x[bits][4];
+        x[5] = base_x[bits][5];
+        x[6] = base_x[bits][6];
+        x[7] = base_x[bits][7];
+
+        y[0] = base_y[bits][0];
+        y[1] = base_y[bits][1];
+        y[2] = base_y[bits][2];
+        y[3] = base_y[bits][3];
+        y[4] = base_y[bits][4];
+        y[5] = base_y[bits][5];
+        y[6] = base_y[bits][6];
+        y[7] = base_y[bits][7];
+      }
+      else
+      {
+        point_add (x, y, z, base_x[bits], base_y[bits]);
+      }
     }
-
-    // always double:
-
-    point_double (x2, y2, z2);
   }
-
-  // handle last one:
-
-  //const u32 final_idx = loop_end >> 5;
-  //const u32 mask      = 1 << (loop_end & 0x1f);
-
-  //if (k[final_idx] & mask)
-  //{
-  // here we just assume that we have at least 2 bits set (an initial one and one additional bit)
-  // this could be dangerous/wrong in some situations, but very, very, very unlikely
-  point_add (x1, y1, z1, x2, y2, z2);
-  //}
 
   /*
    * Get the corresponding affine coordinates x/y:
@@ -1784,15 +1626,15 @@ DECLSPEC void point_mul (u32 r[9], const u32 k[8], GLOBAL_AS const secp256k1_t *
    *
    */
 
-  inv_mod (z1);
+  inv_mod (z);
 
-  // z2 is just used as temporary storage to keep the unmodified z1 for calculating z1^3:
+  u32 t[8];
 
-  mul_mod (z2, z1, z1); // z1^2
-  mul_mod (x1, x1, z2); // x1_affine
+  mul_mod (t, z, z); // z^2
+  mul_mod (x, x, t); // x_affine
 
-  mul_mod (z1, z2, z1); // z1^3
-  mul_mod (y1, y1, z1); // y1_affine
+  mul_mod (z, t, z); // z^3
+  mul_mod (y, y, z); // y_affine
 
   /*
    * output:
@@ -1800,17 +1642,17 @@ DECLSPEC void point_mul (u32 r[9], const u32 k[8], GLOBAL_AS const secp256k1_t *
 
   // shift by 1 byte (8 bits) to make room and add the parity/sign (for odd/even y):
 
-  r[8] =                (x1[0] << 24);
-  r[7] = (x1[0] >> 8) | (x1[1] << 24);
-  r[6] = (x1[1] >> 8) | (x1[2] << 24);
-  r[5] = (x1[2] >> 8) | (x1[3] << 24);
-  r[4] = (x1[3] >> 8) | (x1[4] << 24);
-  r[3] = (x1[4] >> 8) | (x1[5] << 24);
-  r[2] = (x1[5] >> 8) | (x1[6] << 24);
-  r[1] = (x1[6] >> 8) | (x1[7] << 24);
-  r[0] = (x1[7] >> 8);
+  r[8] =               (x[0] << 24);
+  r[7] = (x[0] >> 8) | (x[1] << 24);
+  r[6] = (x[1] >> 8) | (x[2] << 24);
+  r[5] = (x[2] >> 8) | (x[3] << 24);
+  r[4] = (x[3] >> 8) | (x[4] << 24);
+  r[3] = (x[4] >> 8) | (x[5] << 24);
+  r[2] = (x[5] >> 8) | (x[6] << 24);
+  r[1] = (x[6] >> 8) | (x[7] << 24);
+  r[0] = (x[7] >> 8);
 
-  const u32 type = 0x02 | (y1[0] & 1); // (note: 0b10 | 0b01 = 0x03)
+  const u32 type = 0x02 | (y[0] & 1); // (note: 0b10 | 0b01 = 0x03)
 
   r[0] = r[0] | type << 24; // 0x02 or 0x03
 }
