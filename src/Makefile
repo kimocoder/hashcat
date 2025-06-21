@@ -189,6 +189,7 @@ COMPTIME                := $(shell date +%s)
 ##
 
 LFLAGS                  := $(LDFLAGS)
+CFLAGS                  += -Wno-cpp
 
 ifeq ($(PRODUCTION),0)
 CFLAGS                  += -W
