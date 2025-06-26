@@ -17,15 +17,18 @@
 
 #if defined (__APPLE__)
 #include <sys/sysctl.h>
+#include <mach/mach.h>
 #endif
 
 #if defined (_WIN)
 #include <winsock2.h>
 #endif
 
-#if defined(_WIN32) && !defined(__CYGWIN__) && !defined(__MSYS__)
-#else
+#if defined (_POSIX)
 #include <sys/utsname.h>
+#if !defined (__APPLE__)
+#include <sys/sysinfo.h>
+#endif
 #endif
 
 static const char *const PA_000 = "OK";
@@ -1460,13 +1463,13 @@ int generic_salt_encode (MAYBE_UNUSED const hashconfig_t *hashconfig, const u8 *
   return tmp_len;
 }
 
-int get_current_arch()
+int get_current_arch ()
 {
-  #if defined(_WIN32) && !defined(__CYGWIN__) && !defined(__MSYS__)
+  #if defined (_WIN)
 
   SYSTEM_INFO sysinfo;
 
-  GetNativeSystemInfo(&sysinfo);
+  GetNativeSystemInfo (&sysinfo);
 
   switch (sysinfo.wProcessorArchitecture)
   {
@@ -1617,5 +1620,93 @@ void restore_stderr (int saved_fd)
   dup2 (saved_fd, fileno (stderr));
 
   close (saved_fd);
+}
+
+bool get_free_memory (u64 *free_mem)
+{
+  #if defined (_WIN)
+
+  MEMORYSTATUSEX memStatus;
+
+  memStatus.dwLength = sizeof (memStatus);
+
+  if (GlobalMemoryStatusEx (&memStatus))
+  {
+    *free_mem = (u64) memStatus.ullAvailPhys;
+
+    return true;
+  }
+  else
+  {
+    return false;
+  }
+
+  #elif defined (__APPLE__)
+
+  mach_port_t host_port = mach_host_self ();
+
+  mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
+
+  vm_statistics_data_t vm_stat;
+
+  if (host_statistics (host_port, HOST_VM_INFO, (host_info_t) &vm_stat, &count) != KERN_SUCCESS)
+  {
+    return false;
+  }
+
+  int64_t page_size;
+
+  host_page_size (host_port, (vm_size_t*) &page_size);
+
+  *free_mem = (u64) (vm_stat.free_count + vm_stat.inactive_count) * page_size;
+
+  return true;
+
+  #else
+
+  struct sysinfo info;
+
+  if (sysinfo (&info) != 0) return false;
+
+  *free_mem = (u64) info.freeram * info.mem_unit;
+
+  return true;
+
+  #endif
+}
+
+u32 previous_power_of_two (const u32 x)
+{
+  // https://stackoverflow.com/questions/2679815/previous-power-of-2
+  // really cool!
+
+  if (x == 0) return 0;
+
+  u32 r = x;
+
+  r |= (r >>  1);
+  r |= (r >>  2);
+  r |= (r >>  4);
+  r |= (r >>  8);
+  r |= (r >> 16);
+
+  return r - (r >> 1);
+}
+
+u32 next_power_of_two (const u32 x)
+{
+  if (x == 0) return 1;
+
+  u32 r = x - 1;
+
+  r |= (r >>  1);
+  r |= (r >>  2);
+  r |= (r >>  4);
+  r |= (r >>  8);
+  r |= (r >> 16);
+
+  r++;
+
+  return r;
 }
 

@@ -10,7 +10,7 @@
 #include "inc_hash_scrypt.h"
 
 #if SCRYPT_R > 1
-DECLSPEC void shuffle (PRIVATE_AS u32 *TI)
+DECLSPEC void scrypt_shuffle (PRIVATE_AS u32 *TI)
 {
   u32 TT[STATE_CNT4 / 2];
 
@@ -156,18 +156,22 @@ DECLSPEC void scrypt_smix_init (GLOBAL_AS u32 *P, PRIVATE_AS u32 *X, GLOBAL_AS v
     case 3: V = (GLOBAL_AS uint4 *) V3; break;
   }
 
+  GLOBAL_AS uint4 *Vx = V + (xd4 * lsz * ySIZE * zSIZE) + (lid * ySIZE * zSIZE);
+
   for (u32 i = 0; i < STATE_CNT4; i++) X[i] = P[i];
 
   for (u32 y = 0; y < ySIZE; y++)
   {
-    for (u32 z = 0; z < zSIZE; z++) V[VIDX(xd4, lsz, lid, ySIZE, zSIZE, y, z)] = X4[z];
+    GLOBAL_AS uint4 *Vxx = Vx + (y * zSIZE);
+
+    for (u32 z = 0; z < zSIZE; z++) *Vxx++ = X4[z];
 
     for (u32 i = 0; i < (1 << SCRYPT_TMTO); i++)
     {
       salsa_r (X);
 
       #if SCRYPT_R > 1
-      shuffle (X);
+      scrypt_shuffle (X);
       #endif
     }
   }
@@ -196,6 +200,8 @@ DECLSPEC void scrypt_smix_loop (GLOBAL_AS u32 *P, PRIVATE_AS u32 *X, PRIVATE_AS 
     case 3: V = (GLOBAL_AS uint4 *) V3; break;
   }
 
+  GLOBAL_AS uint4 *Vx = V + (xd4 * lsz * ySIZE * zSIZE) + (lid * ySIZE * zSIZE);
+
   for (u32 i = 0; i < STATE_CNT4; i++) X[i] = P[i];
 
   // note: max 1024 iterations = forced -u 2048
@@ -210,14 +216,16 @@ DECLSPEC void scrypt_smix_loop (GLOBAL_AS u32 *P, PRIVATE_AS u32 *X, PRIVATE_AS 
 
     const u32 km = k - (y << SCRYPT_TMTO);
 
-    for (u32 z = 0; z < zSIZE; z++) T4[z] = V[VIDX(xd4, lsz, lid, ySIZE, zSIZE, y, z)];
+    GLOBAL_AS uint4 *Vxx = Vx + (y * zSIZE);
+
+    for (u32 z = 0; z < zSIZE; z++) T4[z] = *Vxx++;
 
     for (u32 i = 0; i < km; i++)
     {
       salsa_r (T);
 
       #if SCRYPT_R > 1
-      shuffle (T);
+      scrypt_shuffle (T);
       #endif
     }
 
@@ -226,7 +234,7 @@ DECLSPEC void scrypt_smix_loop (GLOBAL_AS u32 *P, PRIVATE_AS u32 *X, PRIVATE_AS 
     salsa_r (X);
 
     #if SCRYPT_R > 1
-    shuffle (X);
+    scrypt_shuffle (X);
     #endif
   }
 

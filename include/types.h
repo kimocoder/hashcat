@@ -103,6 +103,10 @@ typedef enum event_identifier
   EVENT_AUTODETECT_STARTING       = 0x00000101,
   EVENT_AUTOTUNE_FINISHED         = 0x00000000,
   EVENT_AUTOTUNE_STARTING         = 0x00000001,
+  EVENT_BACKEND_RUNTIMES_INIT_POST = 0x00000130,
+  EVENT_BACKEND_RUNTIMES_INIT_PRE  = 0x00000131,
+  EVENT_BACKEND_DEVICES_INIT_POST = 0x00000132,
+  EVENT_BACKEND_DEVICES_INIT_PRE  = 0x00000133,
   EVENT_BITMAP_INIT_POST          = 0x00000010,
   EVENT_BITMAP_INIT_PRE           = 0x00000011,
   EVENT_BITMAP_FINAL_OVERFLOW     = 0x00000012,
@@ -1236,6 +1240,8 @@ typedef struct hc_device_param
   int     sm_major;
   int     sm_minor;
   char   *gcnArchName;
+  int     regsPerBlock;
+  int     regsPerMultiprocessor;
   u32     kernel_exec_timeout;
 
   u32     kernel_preferred_wgs_multiple;
@@ -2402,6 +2408,7 @@ typedef struct user_options
   bool         separator_chgd;
   bool         rule_buf_l_chgd;
   bool         rule_buf_r_chgd;
+  bool         session_chgd;
 
   bool         advice;
   bool         benchmark;

@@ -1,4 +1,9 @@
 
+/**
+ * Author......: See docs/credits.txt
+ * License.....: MIT
+ */
+
 #include <inttypes.h>
 #include "common.h"
 #include "types.h"
@@ -269,7 +274,7 @@ u64 scrypt_module_extra_tmp_size (MAYBE_UNUSED const hashconfig_t *hashconfig, M
 
   // now that we know they all have the same settings, we also need to check the self-test hash is different to what the user hash is using
 
-  if (user_options->self_test == true)
+  if ((hashconfig->opts_type & OPTS_TYPE_SELF_TEST_DISABLE) == 0)
   {
     if ((scrypt_N != hashes->st_salts_buf[0].scrypt_N)
      || (scrypt_r != hashes->st_salts_buf[0].scrypt_r)
