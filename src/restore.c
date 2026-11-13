@@ -349,6 +349,19 @@ static int read_restore (hashcat_ctx_t *hashcat_ctx, const bool with_argv, const
 
   rd->cwd[sizeof (rd->cwd) - 1] = 0;
 
+  // The caller checks this too, but only after read_restore () has returned, and the last thing it
+  // does on the way out is enter the recorded directory. A file this build cannot read must not move
+  // the process first, so the check is repeated here, before any of that.
+
+  if (rd->version < RESTORE_VERSION_MIN)
+  {
+    event_log_error (hashcat_ctx, "Incompatible restore-file version.");
+
+    hc_fclose (&fp);
+
+    return -1;
+  }
+
   // Under --restore-position only the position is wanted, so the argv in the file is never read and
   // never parsed. The read above overwrote argc and the argv pointer with what the file said, so
   // both are put back to this session's own command line, which is what gets written out again.
