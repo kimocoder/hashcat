@@ -740,6 +740,11 @@ int bitmap_ctx_init (hashcat_ctx_t *hashcat_ctx)
     EVENT_DATA (EVENT_BITMAP_FINAL_OVERFLOW, NULL, 0);
   }
 
+  // user_options_sanity () enforces this for a run, but a library caller can fill the options
+  // itself and skip it. Above the limit, the shift below and the size it computes overflow.
+
+  if (bitmap_bits > BITMAP_BITS_LIMIT) bitmap_bits = BITMAP_BITS_LIMIT;
+
   const u32 bitmap_nums = 1U << bitmap_bits;
   const u32 bitmap_mask = bitmap_nums - 1;
   const u32 bitmap_size = bitmap_nums * sizeof (u32);
@@ -757,7 +762,21 @@ int bitmap_ctx_init (hashcat_ctx_t *hashcat_ctx)
   u32 *bitmap_s2_c = (u32 *) hcmalloc (bitmap_size);
   u32 *bitmap_s2_d = (u32 *) hcmalloc (bitmap_size);
 
-  if (!bitmap_s1_a || !bitmap_s1_b || !bitmap_s1_c || !bitmap_s1_d || !bitmap_s2_a || !bitmap_s2_b || !bitmap_s2_c || !bitmap_s2_d) return -1;
+  if (!bitmap_s1_a || !bitmap_s1_b || !bitmap_s1_c || !bitmap_s1_d || !bitmap_s2_a || !bitmap_s2_b || !bitmap_s2_c || !bitmap_s2_d)
+  {
+    hcfree (bitmap_s1_a);
+    hcfree (bitmap_s1_b);
+    hcfree (bitmap_s1_c);
+    hcfree (bitmap_s1_d);
+    hcfree (bitmap_s2_a);
+    hcfree (bitmap_s2_b);
+    hcfree (bitmap_s2_c);
+    hcfree (bitmap_s2_d);
+
+    bitmap_ctx->enabled = false;
+
+    return -1;
+  }
 
   u32 *bitmap_tabs[BITMAP_TABLE_CNT] = { bitmap_s1_a, bitmap_s1_b, bitmap_s1_c, bitmap_s1_d, bitmap_s2_a, bitmap_s2_b, bitmap_s2_c, bitmap_s2_d };
 
