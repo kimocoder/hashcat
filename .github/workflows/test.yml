@@ -196,7 +196,7 @@ jobs:
                intel-oneapi-runtime-opencl ocl-icd-libopencl1 clinfo build-essential
           clinfo -l
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.14'
 
