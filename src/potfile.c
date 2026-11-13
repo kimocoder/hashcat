@@ -382,6 +382,11 @@ void potfile_update_hash (hashcat_ctx_t *hashcat_ctx, hash_t *found, char *line_
   char *pw_buf = line_pw_buf;
   int   pw_len = line_pw_len;
 
+  // The same hash can appear more than once in a potfile, and this runs once per line. The previous
+  // password is owned here, so releasing it keeps the duplicates from leaking.
+
+  hcfree (found->pw_buf);
+
   found->pw_buf = (char *) hcmalloc (pw_len + 1);
   found->pw_len = pw_len;
 
