@@ -43,7 +43,7 @@ jobs:
     name: rustfmt check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Install Rust ${{ env.rust_stable }}
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -67,7 +67,7 @@ jobs:
       matrix:
         crate: ${{ fromJSON(needs.define-matrix.outputs.crates) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Install Rust ${{ env.rust_min }}
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -82,7 +82,7 @@ jobs:
     outputs:
       crates: ${{ steps.crates.outputs.crates }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: find crates by Cargo.toml
         id: crates
         run: |
@@ -104,7 +104,7 @@ jobs:
           - windows-latest
         crate: ${{ fromJSON(needs.define-matrix.outputs.crates) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Install Rust ${{ env.rust_stable }}
         uses: dtolnay/rust-toolchain@stable
         with:
