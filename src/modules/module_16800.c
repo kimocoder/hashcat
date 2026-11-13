@@ -308,67 +308,37 @@ static int module_hash_encode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYB
 {
   const wpa_pmkid_t *wpa_pmkid = (const wpa_pmkid_t *) esalt_buf;
 
-  int line_len = 0;
+  char tmp_buf[128];
 
-  if (need_hexify ((const u8 *) wpa_pmkid->essid_buf, wpa_pmkid->essid_len, ':', 0) == true)
-  {
-    char tmp_buf[128];
+  const int tmp_len = hex_encode ((const u8 *) wpa_pmkid->essid_buf, wpa_pmkid->essid_len, (u8 *) tmp_buf);
 
-    int tmp_len = 0;
+  tmp_buf[tmp_len] = 0;
 
-    tmp_buf[tmp_len++] = '$';
-    tmp_buf[tmp_len++] = 'H';
-    tmp_buf[tmp_len++] = 'E';
-    tmp_buf[tmp_len++] = 'X';
-    tmp_buf[tmp_len++] = '[';
-
-    const size_t hex_len = exec_hexify ((const u8 *) wpa_pmkid->essid_buf, wpa_pmkid->essid_len, (u8 *) tmp_buf + tmp_len);
-
-    tmp_len += (int) hex_len;
-
-    tmp_buf[tmp_len++] = ']';
-
-    tmp_buf[tmp_len++] = 0;
-
-    line_len = snprintf (line_buf, line_size, "%02x%02x%02x%02x%02x%02x:%02x%02x%02x%02x%02x%02x:%s",
-      wpa_pmkid->orig_mac_ap[0],
-      wpa_pmkid->orig_mac_ap[1],
-      wpa_pmkid->orig_mac_ap[2],
-      wpa_pmkid->orig_mac_ap[3],
-      wpa_pmkid->orig_mac_ap[4],
-      wpa_pmkid->orig_mac_ap[5],
-      wpa_pmkid->orig_mac_sta[0],
-      wpa_pmkid->orig_mac_sta[1],
-      wpa_pmkid->orig_mac_sta[2],
-      wpa_pmkid->orig_mac_sta[3],
-      wpa_pmkid->orig_mac_sta[4],
-      wpa_pmkid->orig_mac_sta[5],
-      tmp_buf);
-  }
-  else
-  {
-    line_len = snprintf (line_buf, line_size, "%02x%02x%02x%02x%02x%02x:%02x%02x%02x%02x%02x%02x:%s",
-      wpa_pmkid->orig_mac_ap[0],
-      wpa_pmkid->orig_mac_ap[1],
-      wpa_pmkid->orig_mac_ap[2],
-      wpa_pmkid->orig_mac_ap[3],
-      wpa_pmkid->orig_mac_ap[4],
-      wpa_pmkid->orig_mac_ap[5],
-      wpa_pmkid->orig_mac_sta[0],
-      wpa_pmkid->orig_mac_sta[1],
-      wpa_pmkid->orig_mac_sta[2],
-      wpa_pmkid->orig_mac_sta[3],
-      wpa_pmkid->orig_mac_sta[4],
-      wpa_pmkid->orig_mac_sta[5],
-      (const char *) wpa_pmkid->essid_buf);
-  }
+  const int line_len = snprintf (line_buf, line_size, "%08x%08x%08x%08x:%02x%02x%02x%02x%02x%02x:%02x%02x%02x%02x%02x%02x:%s",
+    byte_swap_32 (wpa_pmkid->pmkid[0]),
+    byte_swap_32 (wpa_pmkid->pmkid[1]),
+    byte_swap_32 (wpa_pmkid->pmkid[2]),
+    byte_swap_32 (wpa_pmkid->pmkid[3]),
+    wpa_pmkid->orig_mac_ap[0],
+    wpa_pmkid->orig_mac_ap[1],
+    wpa_pmkid->orig_mac_ap[2],
+    wpa_pmkid->orig_mac_ap[3],
+    wpa_pmkid->orig_mac_ap[4],
+    wpa_pmkid->orig_mac_ap[5],
+    wpa_pmkid->orig_mac_sta[0],
+    wpa_pmkid->orig_mac_sta[1],
+    wpa_pmkid->orig_mac_sta[2],
+    wpa_pmkid->orig_mac_sta[3],
+    wpa_pmkid->orig_mac_sta[4],
+    wpa_pmkid->orig_mac_sta[5],
+    tmp_buf);
 
   return line_len;
 }
 
 static const char *module_deprecated_notice (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra)
 {
-  const char *deprecated_notice = "The plugin 16800 is deprecated and was replaced with plugin 22000. For more details, please read: https://hashcat.net/forum/thread-10253.html";
+  const char *deprecated_notice = "The plugin 16800 is deprecated and was replaced with plugin 22000. For more details, please read: https://hashcat.net/forum/thread-10253.html. A PMKID from an AKM 6 (PSK-SHA256) network cannot be represented in this format; use mode 22000 for those.";
 
   return deprecated_notice;
 }
