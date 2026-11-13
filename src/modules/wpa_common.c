@@ -40,7 +40,9 @@ const module_option_t *wpa_module_register_options (void)
     {
       .name         = OPTION_NONCE_ERROR_CORRECTIONS,
       .type         = MODULE_OPTION_TYPE_U32,
+      .flags        = MODULE_OPTION_FLAG_MAX,
       .def          = NONCE_ERROR_CORRECTIONS,
+      .max          = 64,
       .brain_slot   = 2,
       .help_type    = "Num",
       .help         = "The BF size range to replace AP's nonce last bytes",

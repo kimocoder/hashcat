@@ -188,9 +188,9 @@ def module_generate_hash(word, salt, iterations=None, bssid=None, stmac=None,
   hash_buf += struct.pack("B", keyver)
   hash_buf += mic
   hash_buf += bssid   # access point MAC
-  hash_buf += snonce  # access point nonce
+  hash_buf += anonce  # access point nonce
   hash_buf += stmac   # client MAC
-  hash_buf += anonce  # client nonce
+  hash_buf += snonce  # client nonce
 
   hash_buf += struct.pack("<H", eapol_len)
   hash_buf += eapol
@@ -225,9 +225,9 @@ def module_verify_hash(line):
 
   keyver = buf[42]
   bssid  = buf[59:65]
-  snonce = buf[65:97]
+  anonce = buf[65:97]
   stmac  = buf[97:103]
-  anonce = buf[103:135]
+  snonce = buf[103:135]
 
   eapol_len = struct.unpack("<H", buf[135:137])[0]
 
