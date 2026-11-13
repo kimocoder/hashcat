@@ -765,7 +765,13 @@ static int module_hash_decode_postprocess (MAYBE_UNUSED const hashconfig_t *hash
   {
     // we can filter some message types here
 
-    if (module_option_u32 (user_options, OPTION_EAPOL_MESSAGE_PAIR) != (wpa->message_pair & 0x7f)) return (PARSER_HCCAPX_MESSAGE_PAIR);
+    // an EAPOL record carries a message pair. A PMKID does not: its message pair byte holds the
+    // key version bit instead, so filtering it by pair would drop it for the wrong reason.
+
+    if ((wpa->type == 2) || (wpa->type == 4))
+    {
+      if (module_option_u32 (user_options, OPTION_EAPOL_MESSAGE_PAIR) != (wpa->message_pair & 0x0f)) return (PARSER_HCCAPX_MESSAGE_PAIR);
+    }
   }
 
   if (wpa->nonce_error_corrections_chgd == true)
