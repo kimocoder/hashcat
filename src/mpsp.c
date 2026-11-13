@@ -2024,6 +2024,16 @@ static char* reverseMask (const char *mask, const char *prepend)
   u32 maskLength = strlen (mask);
   u32 prependLength = strlen (prepend);
 
+  // An empty mask has nothing to reverse. Without this the loop index below wrapped to UINT32_MAX
+  // and the reversal wrote outside the buffer.
+
+  if (maskLength == 0)
+  {
+    char *empty = hcstrdup ("");
+
+    return empty;
+  }
+
   // The buffer was a fixed 256 bytes while both loops below index by the lengths of the two strings
   // they are given, and a mask file line can carry more than that. The prepend copy writes
   // prependLength + 1 bytes and the reversal writes maskLength, so the buffer holds both.
@@ -2042,7 +2052,9 @@ static char* reverseMask (const char *mask, const char *prepend)
     tmp_buf[i++] = ',';
   }
 
-  for (u32 j = maskLength - 1; i <= maskLength - 1 ; i++)
+  int j = (int) maskLength - 1;
+
+  for (; i < maskLength; i++)
   {
     if (mask[i] == '?' && mask[i + 1] != '\0')
     {
@@ -2119,21 +2131,36 @@ static int mask_append (hashcat_ctx_t *hashcat_ctx, const char *mask, const char
 
       if (user_options->increment == INCREMENT_INVERSED)
       {
-        if (mp_get_truncated_mask (hashcat_ctx, reverseMask (mask, ""), strlen (mask), increment_len, mask_truncated_next, 256 - (size_t) (mask_truncated_next - mask_truncated)) == -1)
+        char *mask_reversed = reverseMask (mask, "");
+
+        if (mp_get_truncated_mask (hashcat_ctx, mask_reversed, strlen (mask), increment_len, mask_truncated_next, 256 - (size_t) (mask_truncated_next - mask_truncated)) == -1)
         {
+          hcfree (mask_reversed);
+
           hcfree (mask_truncated);
 
           break;
         }
 
+        hcfree (mask_reversed);
+
+        char *mask_reversed_full = NULL;
+
         if (prepend)
         {
-          mask_truncated = reverseMask (mask_truncated, prepend);
+          mask_reversed_full = reverseMask (mask_truncated, prepend);
         }
         else
         {
-         mask_truncated = reverseMask (mask_truncated, "");
+          mask_reversed_full = reverseMask (mask_truncated, "");
         }
+
+        // mask_truncated_next points into the buffer that is replaced here, and nothing below
+        // reads it again
+
+        hcfree (mask_truncated);
+
+        mask_truncated = mask_reversed_full;
       }
       else
       {
