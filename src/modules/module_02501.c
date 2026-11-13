@@ -84,33 +84,7 @@ typedef struct wpa_pmk_tmp
 } wpa_pmk_tmp_t;
 */
 
-#define HCCAPX_VERSION   4
-#define HCCAPX_SIGNATURE 0x58504348 // HCPX
-
-// this is required to force mingw to accept the packed attribute
-#pragma pack(push,1)
-
-struct hccapx
-{
-  u32 signature;
-  u32 version;
-  u8  message_pair;
-  u8  essid_len;
-  u8  essid[32];
-  u8  keyver;
-  u8  keymic[16];
-  u8  mac_ap[6];
-  u8  nonce_ap[32];
-  u8  mac_sta[6];
-  u8  nonce_sta[32];
-  u16 eapol_len;
-  u8  eapol[256];
-
-} __attribute__((packed));
-
-typedef struct hccapx hccapx_t;
-
-#pragma pack(pop)
+#include "wpa_hccapx.h"
 
 static void to_hccapx_t (const hashes_t *hashes, hccapx_t *hccapx, const u32 salt_pos, const u32 digest_pos)
 {
