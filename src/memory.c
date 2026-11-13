@@ -52,6 +52,10 @@ void *hcmalloc (const size_t sz)
   return (p);
 }
 
+// A failed realloc leaves the caller the old block, a size it did not get, and no way to report it:
+// the arrays grown here have no error channel, and every caller would otherwise write through the
+// NULL. The failure is therefore fatal, as it is for an allocation that cannot be made at all.
+
 void *hcrealloc (void *ptr, const size_t oldsz, const size_t addsz)
 {
   void *p = realloc (ptr, oldsz + addsz);
@@ -60,7 +64,7 @@ void *hcrealloc (void *ptr, const size_t oldsz, const size_t addsz)
   {
     fprintf (stderr, "%s\n", MSG_ENOMEM);
 
-    return (NULL);
+    exit (-1);
   }
 
   memset ((char *) p + oldsz, 0, addsz);
