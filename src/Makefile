@@ -1158,6 +1158,13 @@ ifeq ($(MAINTAINER_MODE),0)
 SIMD_LINUX              := -mavx2
 SIMD_WIN                := -mavx2
 
+# -mavx2 is an x86 flag, and the Linux set is built on ARM hosts as well. NEON is part of the
+# aarch64 baseline, so the SIMD bridges need no extra flag there.
+
+ifeq ($(IS_ARM),1)
+SIMD_LINUX              :=
+endif
+
 ifneq ($(MCPU),)
 # the same core the frontend is built for, or the three bridges below would be the one part of the
 # artifact still built for the machine that compiled it
