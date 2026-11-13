@@ -4549,7 +4549,13 @@ int hashes_init_stage1 (hashcat_ctx_t *hashcat_ctx)
               }
             }
 
-            hashes_cnt++;
+            // a hash the hook rejects is not loaded, whether it came from a file or from the
+            // command line. This path used to count it after printing the error.
+
+            if (parser_status >= PARSER_GLOBAL_ZERO)
+            {
+              hashes_cnt++;
+            }
           }
           else
           {
