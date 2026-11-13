@@ -431,7 +431,29 @@ static int read_restore (hashcat_ctx_t *hashcat_ctx, const bool with_argv, const
 
     size_t len = strlen (buf);
 
-    if (len) buf[len - 1] = 0;
+    // write_restore () terminates every argument with a newline, so a line without one is the end of
+    // a truncated file, or an argument longer than the buffer was allowed to hold. Either way the
+    // command line it would rebuild is not the one the session ran. Stripping the last byte, as this
+    // used to do, silently produced a different command.
+
+    if ((len == 0) || (buf[len - 1] != '\n'))
+    {
+      event_log_error (hashcat_ctx, "Restore file %s: argument %u is truncated.", eff_restore_file, i);
+
+      hc_fclose (&fp);
+
+      hcfree (buf);
+
+      for (u32 j = 0; j < i; j++) hcfree (rd->argv[j]);
+
+      hcfree (rd->argv);
+
+      return -1;
+    }
+
+    buf[--len] = 0;
+
+    if ((len > 0) && (buf[len - 1] == '\r')) buf[--len] = 0;
 
     rd->argv[i] = hcstrdup (buf);
   }
