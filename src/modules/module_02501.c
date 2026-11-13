@@ -486,7 +486,7 @@ static bool module_potfile_custom_check (MAYBE_UNUSED const hashconfig_t *hashco
 
   if (wpa_eapol_db->essid_len != wpa_eapol_entry->essid_len) return false;
 
-  if (strcmp ((const char *) wpa_eapol_db->essid, (const char *) wpa_eapol_entry->essid)) return false;
+  if (memcmp (wpa_eapol_db->essid, wpa_eapol_entry->essid, wpa_eapol_db->essid_len) != 0) return false;
 
   const wpa_pmk_tmp_t *wpa_pmk_tmp = (const wpa_pmk_tmp_t *) entry_tmps;
 

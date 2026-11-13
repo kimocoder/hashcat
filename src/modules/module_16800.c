@@ -226,7 +226,7 @@ static bool module_potfile_custom_check (MAYBE_UNUSED const hashconfig_t *hashco
 
   if (wpa_pmkid_db->essid_len != wpa_pmkid_entry->essid_len) return false;
 
-  if (strcmp ((const char *) wpa_pmkid_db->essid_buf, (const char *) wpa_pmkid_entry->essid_buf)) return false;
+  if (memcmp (wpa_pmkid_db->essid_buf, wpa_pmkid_entry->essid_buf, wpa_pmkid_db->essid_len) != 0) return false;
 
   const wpa_pbkdf2_tmp_t *wpa_pbkdf2_tmp = (const wpa_pbkdf2_tmp_t *) entry_tmps;
 
