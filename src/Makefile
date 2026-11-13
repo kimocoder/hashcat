@@ -1466,6 +1466,11 @@ obj/api.c: $(API_HEADER_ROOTS)
 ARRANGEMENT             := SHARED=$(SHARED) PLUGIN_ABI=$(MODULE_INTERFACE_VERSION) PLUGINS=$(PLUGIN_PLATFORM_so)
 ARRANGEMENT             += INSTALL_FOLDER=$(INSTALL_FOLDER) SHARED_FOLDER=$(SHARED_FOLDER) DOCUMENT_FOLDER=$(DOCUMENT_FOLDER) LIBRARY_FOLDER=$(LIBRARY_FOLDER)
 
+# A compiler switch or a flag change rebuilds what the switch decides, and make cannot see either.
+# The compiler and the flags are part of the answer for the same reason the switches above are.
+
+ARRANGEMENT             += CC=$(CC_NATIVE) CFLAGS=$(CFLAGS)
+
 .PHONY: FORCE
 FORCE:
 
