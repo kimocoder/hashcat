@@ -1350,7 +1350,32 @@ int kernel_rules_load (hashcat_ctx_t *hashcat_ctx, kernel_rule_t **out_buf, u32 
           return -1;
         }
 
-        kernel_rules_buf = (kernel_rule_t *) hcrealloc (kernel_rules_buf, kernel_rules_avail_old * sizeof (kernel_rule_t), kernel_rules_incr * sizeof (kernel_rule_t));
+        kernel_rule_t *kernel_rules_new = (kernel_rule_t *) hcrealloc (kernel_rules_buf, kernel_rules_avail_old * sizeof (kernel_rule_t), kernel_rules_incr * sizeof (kernel_rule_t));
+
+        if (kernel_rules_new == NULL)
+        {
+          event_log_error (hashcat_ctx, "Memory exhausted while reading rule file %s.", rp_file);
+
+          status_set_rc_error (hashcat_ctx, RC_FINAL_ERROR_TASK);
+
+          hc_fclose (&fp);
+
+          hcfree (kernel_rules_buf);
+
+          for (u32 j = 0; j < i; j++)
+          {
+            hcfree (all_kernel_rules_buf[j]);
+          }
+
+          hcfree (all_kernel_rules_cnt);
+          hcfree (all_kernel_rules_buf);
+
+          hcfree (rule_buf);
+
+          return -1;
+        }
+
+        kernel_rules_buf = kernel_rules_new;
       }
 
       char in[RP_PASSWORD_SIZE];

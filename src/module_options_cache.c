@@ -126,7 +126,11 @@ static void module_cache_text_add (module_cache_text_t *text, const char *s, con
   {
     const size_t add = MAX (len + 1, (size_t) 65536);
 
-    text->buf = (char *) hcrealloc (text->buf, text->size, add);
+    char *buf = (char *) hcrealloc (text->buf, text->size, add);
+
+    if (buf == NULL) return;
+
+    text->buf = buf;
 
     text->size += add;
   }
@@ -617,7 +621,16 @@ module_cache_t *module_cache_load (const char *dir, const char *version, const i
       break;
     }
 
-    cache->modules = (module_cache_module_t *) hcrealloc (cache->modules, cache->modules_cnt * sizeof (module_cache_module_t), sizeof (module_cache_module_t));
+    module_cache_module_t *modules = (module_cache_module_t *) hcrealloc (cache->modules, cache->modules_cnt * sizeof (module_cache_module_t), sizeof (module_cache_module_t));
+
+    if (modules == NULL)
+    {
+      ok = false;
+
+      break;
+    }
+
+    cache->modules = modules;
 
     module = &cache->modules[cache->modules_cnt];
 

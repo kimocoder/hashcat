@@ -182,7 +182,16 @@ static void module_options_add (hashcat_ctx_t *hashcat_ctx, module_options_t *mo
 
     if (entry == NULL)
     {
-      module_options->entries = (module_option_entry_t *) hcrealloc (module_options->entries, module_options->entries_cnt * sizeof (module_option_entry_t), sizeof (module_option_entry_t));
+      module_option_entry_t *entries = (module_option_entry_t *) hcrealloc (module_options->entries, module_options->entries_cnt * sizeof (module_option_entry_t), sizeof (module_option_entry_t));
+
+      if (entries == NULL)
+      {
+        event_log_error (hashcat_ctx, "Module %s registers --%s, but memory is exhausted. The module's option is left out.", module_file, row->name);
+
+        continue;
+      }
+
+      module_options->entries = entries;
 
       entry = &module_options->entries[module_options->entries_cnt];
 
@@ -214,7 +223,16 @@ static void module_options_add (hashcat_ctx_t *hashcat_ctx, module_options_t *mo
 
     if ((entry->modes_cnt > 0) && (entry->modes[entry->modes_cnt - 1] == hash_mode)) continue;
 
-    entry->modes = (u32 *) hcrealloc (entry->modes, entry->modes_cnt * sizeof (u32), sizeof (u32));
+    u32 *modes = (u32 *) hcrealloc (entry->modes, entry->modes_cnt * sizeof (u32), sizeof (u32));
+
+    if (modes == NULL)
+    {
+      event_log_error (hashcat_ctx, "Module %s registers --%s for hash-mode %u, but memory is exhausted. The hash-mode is left out.", module_file, entry->row.name, hash_mode);
+
+      continue;
+    }
+
+    entry->modes = modes;
 
     entry->modes[entry->modes_cnt] = hash_mode;
 
@@ -317,11 +335,20 @@ static void module_options_conflicts (hashcat_ctx_t *hashcat_ctx, module_options
 
       if (other->row.type != MODULE_OPTION_TYPE_FLAG) takes_value = true;
 
-      entry->modes = (u32 *) hcrealloc (entry->modes, entry->modes_cnt * sizeof (u32), other->modes_cnt * sizeof (u32));
+      u32 *modes = (u32 *) hcrealloc (entry->modes, entry->modes_cnt * sizeof (u32), other->modes_cnt * sizeof (u32));
 
-      memcpy (&entry->modes[entry->modes_cnt], other->modes, other->modes_cnt * sizeof (u32));
+      if (modes == NULL)
+      {
+        event_log_error (hashcat_ctx, "Modules %s and %s register --%s differently, but memory is exhausted. The option's hash-modes are incomplete.", entry->file, other->file, entry->row.name);
+      }
+      else
+      {
+        entry->modes = modes;
 
-      entry->modes_cnt += other->modes_cnt;
+        memcpy (&entry->modes[entry->modes_cnt], other->modes, other->modes_cnt * sizeof (u32));
+
+        entry->modes_cnt += other->modes_cnt;
+      }
 
       if (entry->file_conflict == NULL)
       {
@@ -438,7 +465,16 @@ static void module_options_collect (hashcat_ctx_t *hashcat_ctx, module_options_t
       event_log_warning (hashcat_ctx, "Cannot load module %s: %s", module_file, hc_dlerror ());
     }
 
-    module_options->broken = (u32 *) hcrealloc (module_options->broken, module_options->broken_cnt * sizeof (u32), sizeof (u32));
+    u32 *broken = (u32 *) hcrealloc (module_options->broken, module_options->broken_cnt * sizeof (u32), sizeof (u32));
+
+    if (broken == NULL)
+    {
+      event_log_warning (hashcat_ctx, "Cannot record module %s as broken: memory is exhausted.", module_file);
+
+      return;
+    }
+
+    module_options->broken = broken;
 
     module_options->broken[module_options->broken_cnt] = hash_mode;
 
