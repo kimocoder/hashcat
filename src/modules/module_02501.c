@@ -318,11 +318,11 @@ static int module_hash_binary_save (MAYBE_UNUSED const hashes_t *hashes, MAYBE_U
 
 static int module_hash_binary_parse (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra, hashes_t *hashes)
 {
-  //  hashes->hashlist_mode = HL_MODE_FILE; ???
-
   hash_t *hashes_buf = hashes->hashes_buf;
 
   int hashes_cnt = 0;
+
+  const int hashes_avail = (int) hashes->hashes_cnt;
 
   HCFILE fp;
 
@@ -332,9 +332,13 @@ static int module_hash_binary_parse (MAYBE_UNUSED const hashconfig_t *hashconfig
 
   while (!hc_feof (&fp))
   {
+    if (hashes_cnt >= hashes_avail) break;
+
     const size_t nread = hc_fread (in, sizeof (hccapx_t), 1, &fp);
 
     if (nread == 0) break;
+
+    const hccapx_t *hccapx = (const hccapx_t *) in;
 
     memset (hashes_buf[hashes_cnt].salt, 0, sizeof (salt_t));
 

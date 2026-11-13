@@ -119,6 +119,11 @@ static int module_hash_binary_parse (MAYBE_UNUSED const hashconfig_t *hashconfig
 
   int hashes_cnt = 0;
 
+  // the count the core allocated entries for. Parsing must not write past it, whatever the file
+  // holds and however the two loops below are reached.
+
+  const int hashes_avail = (int) hashes->hashes_cnt;
+
   HCFILE fp;
 
   if (hc_fopen (&fp, hashes->hashfile, "rb") == false) return (PARSER_HAVE_ERRNO);
@@ -133,6 +138,8 @@ static int module_hash_binary_parse (MAYBE_UNUSED const hashconfig_t *hashconfig
 
     while (!hc_feof (&fp))
     {
+      if (hashes_cnt >= hashes_avail) break;
+
       const size_t nread = hc_fread (in, sizeof (hccapx_t), 1, &fp);
 
       if (nread == 0) break;
@@ -168,6 +175,8 @@ static int module_hash_binary_parse (MAYBE_UNUSED const hashconfig_t *hashconfig
 
     while (!hc_feof (&fp))
     {
+      if (hashes_cnt >= hashes_avail) break;
+
       const size_t line_len = fgetl (&fp, line_buf, HCBUFSIZ_LARGE);
 
       if (line_len == 0) continue;
