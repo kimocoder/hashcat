@@ -777,6 +777,17 @@ int outfile_write_open (hashcat_ctx_t *hashcat_ctx)
   return 0;
 }
 
+static void outfile_write_failed (hashcat_ctx_t *hashcat_ctx)
+{
+  outfile_ctx_t *outfile_ctx = hashcat_ctx->outfile_ctx;
+
+  if (outfile_ctx->write_failed == true) return;
+
+  outfile_ctx->write_failed = true;
+
+  event_log_error (hashcat_ctx, "Writing to %s: %s", outfile_ctx->filename, strerror (errno));
+}
+
 void outfile_write_close (hashcat_ctx_t *hashcat_ctx)
 {
   outfile_ctx_t *outfile_ctx = hashcat_ctx->outfile_ctx;
@@ -790,14 +801,19 @@ void outfile_write_close (hashcat_ctx_t *hashcat_ctx)
   if (outfile_ctx->is_fifo == true)
   {
     hc_fflush (&outfile_ctx->fp);
+
+    if (ferror (outfile_ctx->fp.pfp) != 0) outfile_write_failed (hashcat_ctx);
+
     return;
   }
 
   hc_fflush (&outfile_ctx->fp);
 
+  if (ferror (outfile_ctx->fp.pfp) != 0) outfile_write_failed (hashcat_ctx);
+
   hc_unlockfile_warn (hashcat_ctx, &outfile_ctx->fp, outfile_ctx->filename, &outfile_ctx->lock_warned);
 
-  hc_fclose (&outfile_ctx->fp);
+  if (hc_fclose (&outfile_ctx->fp) == -1) outfile_write_failed (hashcat_ctx);
 }
 
 // The bounded appenders these used to define now live in src/shared.c, because potfile.c builds the
@@ -992,12 +1008,19 @@ int outfile_write (hashcat_ctx_t *hashcat_ctx, const char *out_buf, const int ou
 
   if (outfile_ctx->fp.pfp != NULL)
   {
-    hc_fwrite (tmp_buf, tmp_len, 1, &outfile_ctx->fp);
+    // The status display serialises the calls today, but the write itself is not covered by that
+    // mutex, and this one exists for it.
+
+    hc_thread_mutex_lock (outfile_ctx->mux_outfile);
+
+    if ((tmp_len > 0) && (hc_fwrite (tmp_buf, tmp_len, 1, &outfile_ctx->fp) != 1)) outfile_write_failed (hashcat_ctx);
 
     if (print_eol == true)
     {
-      hc_fwrite (EOL, strlen (EOL), 1, &outfile_ctx->fp);
+      if (hc_fwrite (EOL, strlen (EOL), 1, &outfile_ctx->fp) != 1) outfile_write_failed (hashcat_ctx);
     }
+
+    hc_thread_mutex_unlock (outfile_ctx->mux_outfile);
   }
 
   return tmp_len;

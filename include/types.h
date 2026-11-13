@@ -2817,6 +2817,7 @@ typedef struct outfile_ctx
   bool    outfile_json;
   bool    is_fifo;
   bool    lock_warned;
+  bool    write_failed;
 
   char   *filename;
 
