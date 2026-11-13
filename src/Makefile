@@ -505,7 +505,9 @@ ifeq ($(IS_RPI),1)
 
 # What -march=native leaves out on a Raspberry Pi. It resolves the architecture, and on a Pi 4 that is
 # armv8-a, but it leaves the scheduling model at "generic", and -mtune=native does not name the core
-# either. -mcpu does, and this is where the old -mcpu=cortex-a72 came from.
+# either. -mcpu does, and this is where the old -mcpu=cortex-a72 came from, but it selects an
+# architecture as well, and appending it to -march=native is the conflict gcc warns about. -mtune
+# names the core without touching the architecture, which is the part that is missing.
 #
 # Which core, though, is read from the "CPU part" line of /proc/cpuinfo rather than assumed. The board
 # name says Raspberry Pi for machines whose cores are three generations apart, a Cortex-A53 on a Pi 3,
@@ -516,10 +518,10 @@ ifeq ($(IS_RPI),1)
 # flags it has today, because naming a core for hardware nobody asked about would be a change to
 # machines this is not about.
 #
-# -mcpu=native would answer the same question in one flag and is not used, because on a Pi 4 with
-# clang 19 it answers it wrongly: it adds +aes and +sha2, which the BCM2711 does not have, and a
-# binary that uses them dies with SIGILL on the machine that compiled it. /proc/cpuinfo there lists
-# "fp asimd evtstrm crc32 cpuid" and no crypto.
+# A core read from the file is also what avoids asking the compiler: -mcpu=native answers the same
+# question in one flag and on a Pi 4 with clang 19 answers it wrongly, adding +aes and +sha2, which
+# the BCM2711 does not have, and a binary that uses them dies with SIGILL on the machine that compiled
+# it. /proc/cpuinfo there lists "fp asimd evtstrm crc32 cpuid" and no crypto.
 #
 # Only when every core reports the same part, because a name taken from one half of a big.LITTLE pair
 # tunes for a core that half the threads never run on. And only when the compiler accepts the name,
@@ -527,33 +529,45 @@ ifeq ($(IS_RPI),1)
 
 CPU_PARTS               := $(shell awk '/^CPU part/ { print $$4 }' /proc/cpuinfo 2>/dev/null | sort -u)
 
-MCPU_PART_0xd03         := cortex-a53
-MCPU_PART_0xd07         := cortex-a57
-MCPU_PART_0xd08         := cortex-a72
-MCPU_PART_0xd0b         := cortex-a76
+MTUNE_PART_0xd03        := cortex-a53
+MTUNE_PART_0xd07        := cortex-a57
+MTUNE_PART_0xd08        := cortex-a72
+MTUNE_PART_0xd0b        := cortex-a76
 
 ifeq ($(MCPU),)
+
+# An unreadable or unexpected /proc/cpuinfo leaves nothing to look up, and the tests below would then
+# skip without a word. This says so for the same reason the unknown part does: the build is still
+# correct, only the scheduling model is missing.
+
+ifeq ($(CPU_PARTS),)
+$(warning Raspberry Pi, but /proc/cpuinfo carries no CPU part line; building without -mtune, which costs scheduling only)
+else
 ifeq ($(words $(CPU_PARTS)),1)
-MCPU_TUNE               := $(MCPU_PART_$(CPU_PARTS))
+MTUNE                   := $(MTUNE_PART_$(CPU_PARTS))
 
 # The list covers every 64 bit Raspberry Pi there is, so a part it does not know is a board newer than
 # this file. The build still works, because -march=native already got the architecture right and only
 # the scheduling model is missing, so this says so rather than stopping.
 
-ifeq ($(MCPU_TUNE),)
-$(warning Raspberry Pi with CPU part $(CPU_PARTS), which this Makefile has no -mcpu name for)
-$(warning building without it, which costs scheduling only; add MCPU_PART_$(CPU_PARTS) or pass MCPU=)
+ifeq ($(MTUNE),)
+$(warning Raspberry Pi with CPU part $(CPU_PARTS), which this Makefile has no -mtune name for)
+$(warning building without it, which costs scheduling only; add MTUNE_PART_$(CPU_PARTS) or pass MCPU=)
 endif
 
 endif
 endif
 
-ifneq ($(MCPU_TUNE),)
-MCPU_TUNE_PROBE         := $(shell echo | $(CC_NATIVE) -mcpu=$(MCPU_TUNE) -E - 2>&1 >/dev/null)
-HAVE_MCPU_TUNE          := $(if $(MCPU_TUNE_PROBE),0,1)
+endif
 
-ifeq ($(HAVE_MCPU_TUNE),1)
-CFLAGS_HOST_ONLY        += -mcpu=$(MCPU_TUNE)
+ifneq ($(MTUNE),)
+MTUNE_PROBE             := $(shell echo | $(CC_NATIVE) -mtune=$(MTUNE) -E - 2>&1 >/dev/null)
+HAVE_MTUNE              := $(if $(MTUNE_PROBE),0,1)
+
+ifeq ($(HAVE_MTUNE),1)
+# -march=native already carries -mtune=native, and CFLAGS_HOST_ONLY holds $(MARCH_NATIVE) by
+# reference, so replacing the generic tune here reaches the frontend and the SIMD bridges at once.
+MARCH_NATIVE            := $(filter-out -mtune=native,$(MARCH_NATIVE)) -mtune=$(MTUNE)
 endif
 endif
 
