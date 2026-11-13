@@ -1321,8 +1321,11 @@ int potfile_handle_left (hashcat_ctx_t *hashcat_ctx)
           // A module that saved nothing returns 0, and the decrement above then leaves a negative
           // length. memcpy () takes a size_t, so it would arrive as SIZE_MAX. No module in the tree
           // returns 0 today, and out_buf[out_len] below would index out_buf[-1] just as happily.
+          // The upper bound is out_buf's own size, since the length is the module's to choose.
 
           if (binary_len < 0) binary_len = 0;
+
+          if (binary_len >= HCBUFSIZ_LARGE) binary_len = HCBUFSIZ_LARGE - 1;
 
           memcpy (out_buf, binary_buf, binary_len);
 

@@ -1705,7 +1705,17 @@ int save_hash (hashcat_ctx_t *hashcat_ctx)
 
         const int binary_len = module_ctx->module_hash_binary_save (hashes, salt_pos, digest_pos, &binary_buf);
 
-        hc_fwrite (binary_buf, binary_len, 1, &fp);
+        // The length is the module's to choose, so treat a negative one as a failed save rather than
+        // handing it to hc_fwrite, which takes a size_t.
+
+        if (binary_len < 0)
+        {
+          event_log_error (hashcat_ctx, "Module returned a negative length for a binary hash. The hash is left out.");
+        }
+        else if (binary_len > 0)
+        {
+          hc_fwrite (binary_buf, binary_len, 1, &fp);
+        }
 
         hcfree (binary_buf);
       }
