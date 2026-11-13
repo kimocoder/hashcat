@@ -2412,6 +2412,34 @@ int check_cracked (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param)
   return 0;
 }
 
+// A binary hashfile cannot be read as lines. A record holds arbitrary bytes, and a 0x0a among them
+// makes the line reader split the record into pieces that no longer parse. Every binary format this
+// loader knows carries a zero byte early in a record, which a text line never does, so the file can
+// say which reader it needs. The mode says it accepts both forms through
+// OPTS_TYPE_BINARY_HASHFILE_OPTIONAL, and this is the part that looks at the file.
+
+static bool hashes_file_has_nul (const char *path)
+{
+  // a pipe has no beginning to look at twice. Opening it here would consume the first bytes and
+  // leave the parser with the rest.
+
+  if (hc_path_is_file (path) == false) return false;
+
+  HCFILE fp;
+
+  if (hc_fopen (&fp, path, "rb") == false) return false;
+
+  char buf[4096];
+
+  const size_t nread = hc_fread (buf, 1, sizeof (buf), &fp);
+
+  hc_fclose (&fp);
+
+  const bool has_nul = (memchr (buf, 0, nread) != NULL);
+
+  return has_nul;
+}
+
 int hashes_init_filename (hashcat_ctx_t *hashcat_ctx)
 {
   hashconfig_t         *hashconfig         = hashcat_ctx->hashconfig;
@@ -2456,6 +2484,8 @@ int hashes_init_filename (hashcat_ctx_t *hashcat_ctx)
           hashes->hashfile = user_options_extra->hc_hash;
 
           if ((hashconfig->opts_type & OPTS_TYPE_BINARY_HASHFILE_DIRECT) != 0) hashes->hashlist_mode = HL_MODE_FILE_BINARY;
+
+          else if (hashes_file_has_nul (hashes->hashfile) == true) hashes->hashlist_mode = HL_MODE_FILE_BINARY;
         }
       }
     }
