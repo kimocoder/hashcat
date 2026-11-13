@@ -91,7 +91,7 @@ static bool restore_char_is_bare (const char c)
   if ((c >= 'a') && (c <= 'z')) return true;
   if ((c >= '0') && (c <= '9')) return true;
 
-  if (strchr ("_./=:,@+-", c) != NULL) return true;
+  if (strchr ("_./=:,@+-", (unsigned char) c) != NULL) return true;
 
   return false;
 }
