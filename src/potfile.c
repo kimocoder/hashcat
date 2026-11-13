@@ -220,6 +220,17 @@ void potfile_read_close (hashcat_ctx_t *hashcat_ctx)
   hc_fclose (&potfile_ctx->fp);
 }
 
+static void potfile_write_failed (hashcat_ctx_t *hashcat_ctx)
+{
+  potfile_ctx_t *potfile_ctx = hashcat_ctx->potfile_ctx;
+
+  if (potfile_ctx->write_failed == true) return;
+
+  potfile_ctx->write_failed = true;
+
+  event_log_error (hashcat_ctx, "Writing to %s: %s", potfile_ctx->filename, strerror (errno));
+}
+
 int potfile_write_open (hashcat_ctx_t *hashcat_ctx)
 {
   const hashconfig_t  *hashconfig  = hashcat_ctx->hashconfig;
@@ -248,7 +259,7 @@ void potfile_write_close (hashcat_ctx_t *hashcat_ctx)
 
   if (hashconfig->potfile_disable == true) return;
 
-  hc_fclose (&potfile_ctx->fp);
+  if (hc_fclose (&potfile_ctx->fp) == -1) potfile_write_failed (hashcat_ctx);
 }
 
 void potfile_write_append (hashcat_ctx_t *hashcat_ctx, const char *out_buf, const int out_len, u8 *plain_ptr, unsigned int plain_len)
@@ -298,16 +309,18 @@ void potfile_write_append (hashcat_ctx_t *hashcat_ctx, const char *out_buf, cons
 
   if (potfile_ctx->batch_depth > 0)
   {
-    hc_fprintf (&potfile_ctx->fp, "%s" EOL, tmp_buf);
+    if (hc_fprintf (&potfile_ctx->fp, "%s" EOL, tmp_buf) < 0) potfile_write_failed (hashcat_ctx);
 
     return;
   }
 
   hc_lockfile_warn (hashcat_ctx, &potfile_ctx->fp, potfile_ctx->filename, &potfile_ctx->lock_warned);
 
-  hc_fprintf (&potfile_ctx->fp, "%s" EOL, tmp_buf);
+  if (hc_fprintf (&potfile_ctx->fp, "%s" EOL, tmp_buf) < 0) potfile_write_failed (hashcat_ctx);
 
   hc_fflush (&potfile_ctx->fp);
+
+  if (ferror (potfile_ctx->fp.pfp) != 0) potfile_write_failed (hashcat_ctx);
 
   hc_unlockfile_warn (hashcat_ctx, &potfile_ctx->fp, potfile_ctx->filename, &potfile_ctx->lock_warned);
 }
@@ -340,6 +353,8 @@ void potfile_batch_end (hashcat_ctx_t *hashcat_ctx)
   if (potfile_ctx->batch_depth > 0) return;
 
   hc_fflush (&potfile_ctx->fp);
+
+  if (ferror (potfile_ctx->fp.pfp) != 0) potfile_write_failed (hashcat_ctx);
 
   hc_unlockfile_warn (hashcat_ctx, &potfile_ctx->fp, potfile_ctx->filename, &potfile_ctx->lock_warned);
 }

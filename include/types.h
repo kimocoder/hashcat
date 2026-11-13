@@ -2842,6 +2842,7 @@ typedef struct potfile_ctx
 
   bool     enabled;
   bool     lock_warned;
+  bool     write_failed;
 
   char    *filename;
 
