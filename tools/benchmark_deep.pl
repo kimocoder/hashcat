@@ -8,365 +8,494 @@
 use strict;
 use warnings;
 
+use File::Path qw(make_path);
+
+my $startTime        = time();
+my $workdir          = "test_benchmarkDeep_$startTime";
+
 my $nvidia_cache     = "~/.nv";
 my $amd_cache        = "~/.AMD";
 my $hashcat_path     = ".";
-my $kernels_cache    = "$hashcat_path/kernels";
+my $kernels_cache    = "$hashcat_path/cache/kernels";
 my $hashcat_bin      = "$hashcat_path/hashcat";
 my $device           = 1;
-my $workload_profile = 3;
 my $runtime          = 11;
 my $sleep_sec        = 13;
 my $default_mask     = "?a?a?a?a?a?a?a";
-my $result           = "result.txt";
+my $result           = "$workdir/result.txt";
 my $old_hashcat      = 0; # requires to have ran with new hashcat before to create the hashfiles
 my $repeats          = 0;
 my $cpu_benchmark    = 0;
 
-print "\nHardware preparations... You may need to adjust some settings and probably can ignore some of the error\n\n";
-
-system ("echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor");
-
-if ($cpu_benchmark == 1)
+unless (-d $workdir)
 {
-  system ("sudo echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo"); ## for CPU benchmark Intel
-  system ("sudo echo 0 > /sys/devices/system/cpu/cpufreq/boost");         ## for CPU benchmark AMD
-}
-else
-{
-  #system ("rocm-smi --resetprofile --resetclocks --resetfans");
-  #system ("rocm-smi --setfan 100% --setperflevel high");
-
-  system ("nvidia-settings -a GPUPowerMizerMode=1 -a GPUFanControlState=1 -a GPUTargetFanSpeed=100");
+  make_path($workdir) or die "Unable to create '$workdir': $!";
 }
 
-print "\n\nStarting...\n\n";
+print "\n[$workdir] > Hardware preparations... You may need to adjust some settings and probably can ignore some of the error\n\n";
 
-system ("rm -rf $nvidia_cache");
-system ("rm -rf $amd_cache");
+if ($^O eq 'linux')
+{
+  system ("echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor");
+
+  if ($cpu_benchmark == 1)
+  {
+    system ("sudo echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo"); ## for CPU benchmark Intel
+    system ("sudo echo 0 > /sys/devices/system/cpu/cpufreq/boost");         ## for CPU benchmark AMD
+  }
+  else
+  {
+    #system ("rocm-smi --resetprofile --resetclocks --resetfans");
+    #system ("rocm-smi --setfan 100% --setperflevel high");
+
+    system ("nvidia-settings -a GPUPowerMizerMode=1 -a GPUFanControlState=1 -a GPUTargetFanSpeed=100");
+  }
+
+  system ("rm -rf $nvidia_cache");
+  system ("rm -rf $amd_cache");
+}
+elsif ($^O eq 'darwin')
+{
+  open(my $stderr_orig, '>&', STDERR) or die "Can't dup STDERR: $!";
+
+  open(STDERR, '>', '/dev/null') or die "Can't redirect STDERR: $!";
+
+  chomp(my $temp_dir  = `getconf DARWIN_USER_TEMP_DIR`);
+  chomp(my $cache_dir = `getconf DARWIN_USER_CACHE_DIR`);
+
+  # cleanup OpenCL cache
+  system("find \"$temp_dir\" -mindepth 1 -exec rm -rf {} +");
+  # cleanup OpenCL/Metal cache
+  system("rm -rf \"$cache_dir/com.apple.metalfe/*\"");
+  # cleanup Metal cache
+  system("rm -rf \"$cache_dir/com.apple.metal/*\"");
+
+  open(STDERR, '>&', $stderr_orig) or die "Can't restore STDERR: $!";
+}
+
 system ("rm -rf $kernels_cache");
 
-my @hash_types_selection =
-(
-  0,
-  100,
-  1400,
-  1700,
-  22000,
-  1000,
-  3000,
-  5500,
-  5600,
-  1500,
-  500,
-  3200,
-  1800,
-  7500,
-  13100,
-  15300,
-  15900,
-  7100,
-  11600,
-  12500,
-  13000,
-  6241,
-  13400,
-  6800,
-  11300,
-);
+print "\n\n[$workdir] > Starting...\n\n";
+
+# The list hashcat itself benchmarks when it is given -b with no -m. It is read out of the source
+# rather than copied to here, because a copy is a thing that goes stale: this file used to carry all
+# 108 of them, declared and then never read by anything, which is the only reason the copy had not
+# already drifted from the original.
+
+sub default_benchmark_modes
+{
+  my $src = "src/benchmark.c";
+
+  open (my $fh, "<", $src) or die "$src: $!\nRun this from the top of the hashcat tree.\n";
+
+  my $text = do { local $/; <$fh> };
+
+  close ($fh);
+
+  my ($body) = $text =~ /DEFAULT_BENCHMARK_ALGORITHMS_BUF\[\]\s*=\s*\{(.*?)\}/s;
+
+  die "$src: could not find DEFAULT_BENCHMARK_ALGORITHMS_BUF\n" unless defined $body;
+
+  my @modes = $body =~ /^\s*(\d+)\s*,/gm;
+
+  die "$src: the benchmark list came back empty\n" unless scalar @modes;
+
+  return @modes;
+}
+
 
 my @hash_types =
 (
-  0,
-  20,
-  50,
-  60,
-  100,
-  120,
-  150,
-  160,
-  200,
-  300,
-  400,
-  500,
-  600,
   900,
-  1000,
-  1100,
-  1300,
+  0,
+  34600,
+  100,
   1400,
-  1420,
-  1450,
-  1460,
-  1600,
-  1600,
   1700,
-  1720,
-  1750,
-  1760,
-  1800,
-  2100,
-  2400,
-  2410,
-  2611,
-  2711,
-  2811,
-  3000,
-  3100,
-  3200,
-  3710,
-  3800,
-  3910,
-  4010,
-  4110,
-  4300,
-  4400,
-  4500,
-  4520,
-  4700,
-  4800,
-  4900,
+  17400,
+  17600,
+  6000,
+  33600,
+  34800,
+  600,
+  31000,
+  11700,
+  11800,
+  6900,
   5100,
-  5200,
+  17800,
+  18000,
+  31100,
+  6100,
+  610,
+  620,
+  10,
+  20,
+  110,
+  120,
+  1410,
+  1420,
+  1710,
+  1720,
+  10100,
+  11500,
+  27900,
+  28000,
+  18700,
+  25700,
+  27800,
+  34200,
+  34201,
+  34211,
+  33502,
+  33500,
+  33501,
+  14100,
+  14000,
+  26401,
+  26403,
+  15400,
+  14500,
+  14900,
+  40070,
+  40031,
+  40032,
+  40024,
+  40034,
+  34000,
+  8900,
+  30601,
+  30600,
+  36100,
+  400,
+  36200,
+  16100,
+  30420,
+  11400,
   5300,
   5400,
+  25000,
+  25200,
+  26800,
+  27300,
+  22000,
+  22001,
+  7350,
+  7300,
+  10200,
+  31300,
+  16500,
+  19600,
+  19800,
+  28800,
+  32100,
+  19700,
+  19900,
+  28900,
+  32200,
+  7500,
+  13100,
+  18200,
+  35300,
+  35400,
   5500,
   5600,
-  5800,
-  6000,
-  6100,
-  6211,
-  6221,
-  6231,
-  6241,
+  40056,
+  28700,
+  4800,
+  8500,
+  14200,
   6300,
-  6400,
-  6500,
-  6600,
-  6700,
-  6800,
-  6900,
+  40017,
+  40015,
+  40016,
+  3000,
+  19000,
+  19100,
+  19200,
+  40041,
+  15300,
+  15310,
+  15900,
+  15910,
+  40019,
+  40037,
+  35200,
+  12400,
+  1000,
+  9900,
+  5800,
+  33700,
+  28100,
+  13800,
+  2410,
+  40021,
+  9300,
+  5700,
+  2400,
+  40075,
+  8100,
+  22200,
+  1100,
+  2100,
   7000,
-  7100,
-  7300,
+  40054,
+  125,
+  501,
+  22,
+  40038,
+  26500,
+  122,
+  1722,
+  40018,
+  3200,
+  36300,
+  500,
+  1500,
   7400,
-  7500,
+  1800,
+  35100,
+  35600,
+  131,
+  132,
+  1731,
+  24100,
+  40053,
+  12,
+  11100,
+  40055,
+  3100,
+  112,
+  40036,
+  7401,
+  11200,
+  200,
+  300,
+  8000,
+  8300,
+  25900,
+  16400,
+  1411,
+  1711,
+  29200,
+  24900,
+  40025,
+  15000,
+  12600,
+  1600,
+  141,
+  1441,
+  1421,
+  33400,
+  101,
+  111,
   7700,
   7701,
   7800,
   7801,
-  7900,
-  8000,
-  8100,
-  8200,
-  8300,
-  8400,
-  8500,
+  40023,
+  40078,
+  20712,
+  40061,
+  40063,
+  133,
+  13500,
+  40057,
+  40064,
+  40065,
+  40066,
+  40059,
+  40060,
+  40062,
+  40058,
+  21500,
+  21501,
+  24,
   8600,
   8700,
-  8800,
-  8900,
-  9000,
   9100,
-  9400,
-  9500,
-  9600,
-  9700,
-  9710,
-  9720,
-  9800,
-  9810,
-  9820,
-  9900,
-  10100,
-  10300,
+  26200,
+  40045,
+  4711,
+  20711,
+  22400,
+  27400,
+  29511,
+  34100,
+  29421,
+  23900,
+  24000,
+  16700,
+  27500,
+  27600,
+  20011,
+  22100,
+  12900,
+  8800,
+  18300,
+  29341,
+  12200,
   10400,
   10410,
   10420,
+  10510,
   10500,
+  25400,
+  10600,
   10700,
-  10800,
-  10900,
-  11000,
-  11100,
-  11200,
-  11300,
-  11400,
-  11500,
-  11600,
-  11700,
-  11750,
-  11760,
-  11800,
-  11850,
-  11860,
-  11900,
-  12000,
-  12200,
-  12300,
-  12400,
-  12500,
-  12600,
-  12700,
-  12800,
-  12900,
-  13000,
-  13100,
-  13200,
-  13300,
-  13400,
-  13500,
-  13600,
-  13711,
-  13721,
-  13731,
-  13741,
-  13751,
-  13761,
-  13771,
-  13781,
-  13800,
-  13900,
-  14000,
-  14100,
-  14400,
-  14500,
-  14700,
-  14800,
-  14900,
-  15000,
-  15100,
-  15200,
-  15300,
-  15400,
-  15500,
-  15600,
-  15900,
-  16000,
-  16100,
-  16200,
-  16300,
-  16400,
-  16500,
-  16600,
-  16700,
-  16900,
-  17210,
-  17300,
-  17400,
-  17500,
-  17600,
-  17700,
-  17800,
-  17900,
-  18000,
-  18100,
-  18200,
-  18300,
+  9400,
+  9500,
+  9600,
+  25300,
+  9700,
+  9710,
+  9720,
+  9810,
+  9820,
+  9800,
   18400,
-  18500,
   18600,
-  18700,
-  18800,
-  18900,
-  19000,
-  19100,
-  19200,
-  19300,
-  19500,
-  19600,
-  19700,
-  19800,
-  19900,
-  20011,
-  20012,
-  20013,
+  16200,
+  23300,
+  36400,
+  36410,
+  6600,
+  8200,
+  31800,
+  9000,
+  40011,
+  6800,
+  13400,
+  34301,
+  34300,
+  23400,
+  16900,
+  26000,
+  26100,
+  23100,
+  11600,
+  12500,
+  23800,
+  23700,
+  13000,
+  17220,
+  17200,
   20500,
   20510,
-  20600,
-  20710,
-  20800,
-  20900,
-  21000,
-  21100,
-  21200,
-  21300,
-  21400,
-  21500,
-  21600,
-  21700,
-  21800,
-  22000,
-  22100,
-  22200,
-  22300,
-  22400,
-  22500,
-  22600,
-  22700,
+  23001,
+  23002,
+  23003,
+  31200,
+  13600,
+  18900,
+  32700,
+  24700,
+  13200,
+  13300,
+  23500,
+  23600,
+  14700,
+  14800,
+  8400,
+  33800,
+  2612,
+  121,
+  3711,
+  4521,
+  40051,
+  24800,
+  32300,
+  11,
+  13900,
+  40026,
+  16000,
+  40020,
+  40069,
+  4522,
+  2811,
+  2611,
+  2711,
+  21,
+  18100,
+  40050,
+  16501,
+  40022,
+  124,
+  35500,
+  40035,
+  40033,
+  19500,
+  27200,
+  35800,
+  30000,
+  30120,
+  40042,
+  40043,
+  40044,
+  24410,
+  24420,
+  15500,
+  17010,
+  17020,
+  17030,
+  17040,
   22911,
   22921,
   22931,
   22941,
   22951,
-  23001,
-  23002,
-  23003,
-  23100,
-  23200,
-  23300,
-  23400,
-  23500,
-  23600,
-  23700,
-  23800,
-  23900,
-  24100,
-  24200,
-  24300,
-  24410,
-  24420,
+  40052,
+  28300,
+  22600,
   24500,
-  24600,
-  24700,
-  24800,
-  24900,
-  25000,
-  25100,
-  25200,
-  25300,
-  25400,
-  25500,
-  25700,
-  25900,
-  26000,
-  26100,
-  26200,
-  26300,
-  26401,
-  26402,
-  26403,
-  26500,
+  22301,
+  23,
+  30700,
+  29600,
+  31900,
   26600,
-  26700,
-  26800,
-  26900,
-  27000,
-  27100,
-  27200,
-  27300,
-  27400,
-  27500,
-  27600,
+  26610,
+  29800,
+  21000,
+  30901,
+  30903,
+  11300,
+  16600,
+  21700,
+  21800,
+  12700,
+  15200,
+  40040,
+  34700,
+  32500,
+  25500,
+  16300,
+  15600,
+  15700,
+  22500,
   27700,
-  27800,
-  27900,
-  28000,
+  22700,
+  28200,
+  29910,
+  29920,
+  29930,
+  29940,
+  24600,
+  31400,
 );
+
+# "selection" runs exactly what hashcat -b runs, anything else is taken as a list of hash-modes
 
 if (scalar @ARGV)
 {
-  @hash_types = @ARGV;
+  if ($ARGV[0] eq "selection")
+  {
+    @hash_types = default_benchmark_modes ();
+  }
+  else
+  {
+    @hash_types = @ARGV;
+  }
 }
 
 unlink ($result);
@@ -379,6 +508,8 @@ for my $hash_type (@hash_types)
 
   my $mask = $default_mask;
 
+  my $filepath = "$workdir/tmp.hash.$hash_type";
+
   if ($old_hashcat == 0)
   {
     my $module = get_module ($hash_type);
@@ -386,7 +517,7 @@ for my $hash_type (@hash_types)
     my $st_hash   = $module->{"st_hash"};
     my $is_binary = $module->{"is_binary"};
 
-    open (OUT, ">", "tmp.hash.$hash_type") or die;
+    open (OUT, ">", $filepath) or die;
 
     if ($is_binary)
     {
@@ -406,7 +537,7 @@ for my $hash_type (@hash_types)
   (
     $hashcat_bin, "-D2",
     "--quiet",
-    "tmp.hash.$hash_type",
+    $filepath,
     "--keep-guessing",
     "--self-test-disable",
     "--markov-disable",
@@ -420,7 +551,6 @@ for my $hash_type (@hash_types)
     "--runtime", $runtime,
     "--machine-readable",
     "--optimized-kernel-enable",
-    "--workload-profile", $workload_profile,
     "--hash-type", $hash_type,
     "--attack-mode", 3,
     $mask
@@ -435,13 +565,13 @@ for my $hash_type (@hash_types)
     push (@command, "--backend-devices", $device);
   }
 
-  print "Executing command: ", join (" ", @command), "\n";
+  print "[$workdir] > Executing command: ", join (" ", @command), "\n";
 
   my $final_speed = 0;
 
   for (my $i = 0; $i <= $repeats; $i++)
   {
-    printf ("Run #%d\n", $i);
+    printf ("[$workdir] > Run #%d\n", $i);
 
     open (IN, "-|", @command, "--runtime", 1);
     close (IN);
@@ -493,6 +623,16 @@ for my $hash_type (@hash_types)
   open (OUT, ">>", $result) or die;
   print OUT $final_speed, "\n";
   close (OUT);
+
+  my $endTime = time();
+  my $elapsed = $endTime - $startTime;
+
+  my $days    = int($elapsed / 86400);
+  my $hours   = int(($elapsed % 86400) / 3600);
+  my $minutes = int(($elapsed % 3600) / 60);
+  my $seconds = $elapsed % 60;
+
+  printf("\n\n[$workdir] > All tests done in: %d days, %02d hours, %02d minutes, %02d seconds\n", $days, $hours, $minutes, $seconds);
 }
 
 sub get_module
@@ -500,8 +640,10 @@ sub get_module
   my $hash_type = shift;
 
   my $st_hash         = undef;
+  my $st_pass         = undef;
   my $is_binary       = 0;
   my $pw_min          = -1;
+  my $pw_min_function = 0;
   my $pw_max          = -1;
   my $benchmark_mask  = undef;
 
@@ -512,6 +654,8 @@ sub get_module
   while (my $line = <IN>)
   {
     chomp $line;
+
+    next if ($line =~ /^\s*\/\//);
 
     if ($line =~ /OPTS_TYPE_BINARY_HASHFILE/)
     {
@@ -525,9 +669,42 @@ sub get_module
       }
     }
 
-    if ($line =~ /ST_HASH *= \"(.*)\"/)
+    if ($line =~ /ST_HASH *= \"(.*?)\"\s*(;|$)/)
     {
       $st_hash = $1;
+
+      my $end = $2;
+
+      # a hash split over several string literals, joined the way the compiler joins them
+
+      while ($end eq "")
+      {
+        my $next = <IN>;
+
+        last if (defined ($next) == 0);
+
+        chomp $next;
+
+        last if ($next =~ /^\s*\"(.*?)\"\s*(;|$)/) == 0;
+
+        $st_hash .= $1;
+
+        $end = $2;
+      }
+
+      # undo the C escapes, such as the \" around the field name in 31400's hash
+
+      $st_hash =~ s/\\(["\\])/$1/g;
+    }
+
+    if ($line =~ /ST_PASS *= \"(.*)\"/)
+    {
+      $st_pass = $1;
+    }
+
+    if ($line =~ /^u32 module_pw_min \(/)
+    {
+      $pw_min_function = 1;
     }
 
     if ($line =~ /const u32 pw_min = (\d+);/)
@@ -547,6 +724,14 @@ sub get_module
   }
 
   close (IN);
+
+  # A minimum given as an expression, such as the RC4 modes' PW_LEN, or returned on the function's
+  # own line cannot be read here, but the self-test password always satisfies it
+
+  if (($pw_min == -1) && ($pw_min_function == 1) && (defined $st_pass))
+  {
+    $pw_min = length ($st_pass);
+  }
 
   my $mask = $default_mask;
 

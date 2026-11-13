@@ -15,16 +15,12 @@
 
 DECLSPEC u64 siphash_rot32_S (const u64 a)
 {
-  vconv64_t in;
+  // swapping the two halves of a 64 bit word is a rotation by 32. Writing it as a union makes
+  // Mesa put the value in scratch memory.
 
-  in.v64 = a;
+  const u64 r = hc_rotr64_S (a, 32);
 
-  vconv64_t out;
-
-  out.v32.a = in.v32.b;
-  out.v32.b = in.v32.a;
-
-  return out.v64;
+  return r;
 }
 
 DECLSPEC u64x siphash_rot32 (const u64x a)
@@ -104,10 +100,14 @@ DECLSPEC void m10100m (PRIVATE_AS u32 *w, const u32 pw_len, KERN_ATTR_FUNC_VECTO
 
   switch (pw_len / 8)
   {
-    case 0: w[1] |= pw_len << 24; break;
-    case 1: w[3] |= pw_len << 24; break;
-    case 2: w[5] |= pw_len << 24; break;
-    case 3: w[7] |= pw_len << 24; break;
+    case 0: w[ 1] |= pw_len << 24; break;
+    case 1: w[ 3] |= pw_len << 24; break;
+    case 2: w[ 5] |= pw_len << 24; break;
+    case 3: w[ 7] |= pw_len << 24; break;
+    case 4: w[ 9] |= pw_len << 24; break;
+    case 5: w[11] |= pw_len << 24; break;
+    case 6: w[13] |= pw_len << 24; break;
+    case 7: w[15] |= pw_len << 24; break;
   }
 
   /**
@@ -195,10 +195,14 @@ DECLSPEC void m10100s (PRIVATE_AS u32 *w, const u32 pw_len, KERN_ATTR_FUNC_VECTO
 
   switch (pw_len / 8)
   {
-    case 0: w[1] |= pw_len << 24; break;
-    case 1: w[3] |= pw_len << 24; break;
-    case 2: w[5] |= pw_len << 24; break;
-    case 3: w[7] |= pw_len << 24; break;
+    case 0: w[ 1] |= pw_len << 24; break;
+    case 1: w[ 3] |= pw_len << 24; break;
+    case 2: w[ 5] |= pw_len << 24; break;
+    case 3: w[ 7] |= pw_len << 24; break;
+    case 4: w[ 9] |= pw_len << 24; break;
+    case 5: w[11] |= pw_len << 24; break;
+    case 6: w[13] |= pw_len << 24; break;
+    case 7: w[15] |= pw_len << 24; break;
   }
 
   /**

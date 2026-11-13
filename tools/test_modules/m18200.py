@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+
+##
+## Author......: See docs/credits.txt
+## License.....: MIT
+##
+
+import random
+
+from lib.kerberos_rc4 import hmac_md5, ntlm_key, rc4
+from lib.test_helpers import random_bytes
+
+# Kerberos 5 AS-REP (krb5asrep, etype 23). Same RC4-HMAC key schedule as krb5tgs with a different
+# message type and cleartext ticket; verify keeps the decrypted ticket only when its ASN.1 markers
+# match one of the accepted shapes.
+
+MSG_TYPE = b"\x08\x00\x00\x00"
+
+CLEARTEXT_TICKET = (
+    "7981df3081dca01b3019a003020117a112041071e026814da2"
+    "3f129f0e67a01b73f79aa11c301a3018a003020100a111180f32303138313033303039353"
+    "831365aa206020460fdc6caa311180f32303337303931343032343830355aa40703050050"
+    "c10000a511180f32303138313033303039353831365aa611180f323031383130333030393"
+    "53831365aa711180f32303138313033303139353831365aa811180f323031383130333131"
+    "30303433385aa90d1b0b545952454c4c2e434f5250aa20301ea003020101a11730151b066"
+    "b72627467741b0b545952454c4c2e434f5250"
+)
+
+
+def module_test_properties():
+  return {
+    'constraints': {
+      'pure': {
+        'password_length': [0, 256],
+        'salt_length': [16, 16],
+      },
+      'optimized': {
+        'password_length': [0, 27],
+        'salt_length': [16, 16],
+      },
+      'combined_length': None,
+    },
+  }
+
+
+def module_generate_hash(
+    word,
+    salt=None,
+    iterations=None,
+    user="user",
+    realm="realm",
+    checksum=None,
+    edata2=None,
+    fmt=None,
+):
+
+    k = ntlm_key(word)
+    k1 = hmac_md5(k, MSG_TYPE)
+
+    cleartext = CLEARTEXT_TICKET
+
+    if checksum is not None:
+        checksum = bytes.fromhex(checksum)
+    else:
+        nonce = random_bytes(8).hex()
+        cleartext = nonce + cleartext
+        checksum = hmac_md5(k1, bytes.fromhex(cleartext))
+
+    k3 = hmac_md5(k1, checksum)
+
+    if edata2 is not None:
+        ticket = rc4(k3, bytes.fromhex(edata2)).hex()
+
+        correct = (
+            (ticket[16:20] == "7981" and ticket[22:24] == "30")
+            or (ticket[16:18] == "79" and ticket[20:22] == "30")
+            or (ticket[16:20] == "7982" and ticket[24:26] == "30")
+        )
+
+        cleartext = ticket if correct else "0" * (len(cleartext) + 16)
+
+    edata2 = rc4(k3, bytes.fromhex(cleartext))
+
+    if fmt is None:
+        fmt = random.randint(1, 2)
+
+    if fmt == 1:
+        return f"$krb5asrep$23${user}@{realm}:{checksum.hex()}${edata2.hex()}"
+    else:
+        return f"$krb5asrep$23${user}${realm}${checksum.hex()}${edata2.hex()}"
+
+
+def module_verify_hash(line):
+    s = line.decode("latin-1")
+
+    colon = s.rfind(":")
+    if colon < 1:
+        return None
+
+    hash_in = s[:colon]
+    word = line[colon + 1 :]
+
+    data = hash_in.split("$")
+
+    if len(data) == 7 and data[1] == "krb5asrep":
+        fmt = 2
+        user = data[3]
+        realm = data[4]
+        checksum = data[5]
+        edata2 = data[6]
+    elif len(data) == 5 and data[1] == "krb5asrep" and data[2] == "23":
+        fmt = 1
+        upn_cksum = data[3]
+        colon2 = upn_cksum.rfind(":")
+        upn = upn_cksum[:colon2]
+        checksum = upn_cksum[colon2 + 1 :]
+        at = upn.rfind("@")
+        user = upn[:at] if at >= 0 else upn
+        realm = upn[at + 1 :] if at >= 0 else ""
+        edata2 = data[4]
+    elif len(data) == 4 and data[1] == "krb5asrep":
+        fmt = 1
+        upn = data[3]
+        at = upn.find("@")
+        user = upn[:at] if at >= 0 else upn
+        realm = upn[at + 1 :] if at >= 0 else ""
+        rest = s[s.index(upn) + len(upn) + 1 : colon]
+        parts = rest.split("$")
+        checksum = parts[0]
+        edata2 = parts[1] if len(parts) > 1 else ""
+    else:
+        return None
+
+    if len(checksum) != 32 or len(edata2) < 64:
+        return None
+
+    return (
+        module_generate_hash(
+            word, user=user, realm=realm, checksum=checksum, edata2=edata2, fmt=fmt
+        ),
+        word,
+    )

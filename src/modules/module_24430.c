@@ -1,0 +1,265 @@
+/**
+ * Author......: kozmer
+ * License.....: MIT
+ */
+
+#include "common.h"
+#include "types.h"
+#include "modules.h"
+#include "bitops.h"
+#include "convert.h"
+#include "shared.h"
+#include "parser.h"
+
+static const u32   ATTACK_EXEC    = ATTACK_EXEC_OUTSIDE_KERNEL;
+static const u32   DGST_POS0      = 0;
+static const u32   DGST_POS1      = 1;
+static const u32   DGST_POS2      = 2;
+static const u32   DGST_POS3      = 3;
+static const u32   DGST_SIZE      = DGST_SIZE_4_4;
+static const u32   HASH_CATEGORY  = HASH_CATEGORY_PRIVATE_KEY;
+static const char *HASH_NAME      = "PKCS#12 (.pfx, .p12) (SHA1 + HMAC-SHA1)";
+static const u64   KERN_TYPE      = 24430;
+static const u32   OPTI_TYPE      = OPTI_TYPE_ZERO_BYTE;
+static const u64   OPTS_TYPE      = OPTS_TYPE_STOCK_MODULE
+                                  | OPTS_TYPE_PT_GENERATE_LE;
+static const u32   SALT_TYPE      = SALT_TYPE_EMBEDDED;
+static const char *ST_PASS        = "hashcat";
+static const char *ST_HASH        = "$pkcs12$1$2048$16$0123456789abcdef0123456789abcdef$100$308200003082000006092a864886f70d0100aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa$ae3c0125849b1d877327a42c0aa768be0b1509c6";
+
+#include "hooks_common.c"
+
+static const char *module_usage_notice (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra)
+{
+  return "You can use https://github.com/hashcat/hashcat/blob/master/tools/pkcs12_to_hashcat.py to extract the hashes";
+}
+
+#define PKCS12_MIN_SALT_LEN     ( 8)
+#define PKCS12_MAX_SALT_LEN     (40)
+#define PKCS12_MIN_SALT_HEX_LEN (PKCS12_MIN_SALT_LEN * 2)
+#define PKCS12_MAX_SALT_HEX_LEN (PKCS12_MAX_SALT_LEN * 2)
+
+typedef struct pkcs12_tmp
+{
+  u32  dgst[5];
+  u32  out[5];
+
+} pkcs12_tmp_t;
+
+typedef struct pkcs12
+{
+  u32 data_buf[16384];
+  int data_len;
+
+  u32 mac_digest[5];
+
+} pkcs12_t;
+
+static const char *SIGNATURE_PKCS12 = "$pkcs12$";
+
+static u64 module_esalt_size (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra)
+{
+  const u64 esalt_size = (const u64) sizeof (pkcs12_t);
+
+  return esalt_size;
+}
+
+static u64 module_tmp_size (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra)
+{
+  const u64 tmp_size = (const u64) sizeof (pkcs12_tmp_t);
+
+  return tmp_size;
+}
+
+static int module_hash_decode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED void *digest_buf, MAYBE_UNUSED salt_t *salt, MAYBE_UNUSED void *esalt_buf, MAYBE_UNUSED void *hook_salt_buf, MAYBE_UNUSED hashinfo_t *hash_info, const char *line_buf, MAYBE_UNUSED const int line_len)
+{
+  u32 *digest = (u32 *) digest_buf;
+
+  pkcs12_t *pkcs12 = (pkcs12_t *) esalt_buf;
+
+  hc_token_t token;
+
+  memset (&token, 0, sizeof (hc_token_t));
+
+  token.token_cnt  = 8;
+
+  token.signatures_cnt    = 1;
+  token.signatures_buf[0] = SIGNATURE_PKCS12;
+
+  // $pkcs12$
+  token.len[0]     = 8;
+  token.attr[0]    = TOKEN_ATTR_FIXED_LENGTH
+                   | TOKEN_ATTR_VERIFY_SIGNATURE;
+
+  // mac_algo
+  token.sep[1]     = '$';
+  token.len[1]     = 1;
+  token.attr[1]    = TOKEN_ATTR_FIXED_LENGTH
+                   | TOKEN_ATTR_VERIFY_DIGIT;
+
+  // iterations
+  token.sep[2]     = '$';
+  token.len_min[2] = 1;
+  token.len_max[2] = 8;
+  token.attr[2]    = TOKEN_ATTR_VERIFY_LENGTH
+                   | TOKEN_ATTR_VERIFY_DIGIT;
+
+  // salt_len
+  token.sep[3]     = '$';
+  token.len_min[3] = 1;
+  token.len_max[3] = 3;
+  token.attr[3]    = TOKEN_ATTR_VERIFY_LENGTH
+                   | TOKEN_ATTR_VERIFY_DIGIT;
+
+  // salt buffer
+  token.sep[4]     = '$';
+  token.len_min[4] = PKCS12_MIN_SALT_HEX_LEN;
+  token.len_max[4] = PKCS12_MAX_SALT_HEX_LEN;
+  token.attr[4]    = TOKEN_ATTR_VERIFY_LENGTH
+                   | TOKEN_ATTR_VERIFY_HEX;
+
+  // data_len
+  token.sep[5]     = '$';
+  token.len_min[5] = 1;
+  token.len_max[5] = 8;
+  token.attr[5]    = TOKEN_ATTR_VERIFY_LENGTH
+                   | TOKEN_ATTR_VERIFY_DIGIT;
+
+  // data
+  token.sep[6]     = '$';
+  token.len_min[6] = 64;
+  token.len_max[6] = 131072;
+  token.attr[6]    = TOKEN_ATTR_VERIFY_LENGTH
+                   | TOKEN_ATTR_VERIFY_HEX;
+
+  // mac
+  token.sep[7]     = '$';
+  token.len[7]     = 40;
+  token.attr[7]    = TOKEN_ATTR_FIXED_LENGTH
+                   | TOKEN_ATTR_VERIFY_HEX;
+
+  const int rc_tokenizer = input_tokenizer ((const u8 *) line_buf, line_len, &token);
+
+  if (rc_tokenizer != PARSER_OK) return (rc_tokenizer);
+
+  // mac_algo
+
+  const u8 *mac_algo_pos = token.buf[1];
+
+  if (mac_algo_pos[0] != '1') return (PARSER_SIGNATURE_UNMATCHED);
+
+  // iterations
+
+  const u8 *iter_pos = token.buf[2];
+
+  const u32 iter = hc_strtoul ((const char *) iter_pos, NULL, 10);
+
+  if (iter < 1) return (PARSER_SALT_ITERATION);
+
+  salt->salt_iter = iter - 1;
+
+  // salt_len
+
+  const u8 *salt_len_pos = token.buf[3];
+
+  const int salt_len_check = hc_strtoul ((const char *) salt_len_pos, NULL, 10);
+
+  // salt buffer
+
+  const u8 *salt_pos = token.buf[4];
+
+  salt->salt_len = hex_decode (salt_pos, token.len[4], (u8 *) salt->salt_buf);
+
+  if (salt_len_check != (int) salt->salt_len) return (PARSER_SALT_LENGTH);
+
+  // data_len
+
+  const u8 *data_len_pos = token.buf[5];
+
+  const int data_len_check = hc_strtoul ((const char *) data_len_pos, NULL, 10);
+
+  // data
+
+  const u8 *data_pos = token.buf[6];
+  const int data_hex_len = token.len[6];
+
+  pkcs12->data_len = hex_decode (data_pos, data_hex_len, (u8 *) pkcs12->data_buf);
+
+  if (data_len_check != pkcs12->data_len) return (PARSER_HASH_LENGTH);
+
+  // mac_hex
+
+  const u8 *mac_pos = token.buf[7];
+
+  u8 mac_buf[20];
+
+  hex_decode (mac_pos, 40, mac_buf);
+
+  pkcs12->mac_digest[0] = byte_swap_32 (((u32 *) mac_buf)[0]);
+  pkcs12->mac_digest[1] = byte_swap_32 (((u32 *) mac_buf)[1]);
+  pkcs12->mac_digest[2] = byte_swap_32 (((u32 *) mac_buf)[2]);
+  pkcs12->mac_digest[3] = byte_swap_32 (((u32 *) mac_buf)[3]);
+  pkcs12->mac_digest[4] = byte_swap_32 (((u32 *) mac_buf)[4]);
+
+  // hash
+
+  digest[0] = pkcs12->mac_digest[0];
+  digest[1] = pkcs12->mac_digest[1];
+  digest[2] = pkcs12->mac_digest[2];
+  digest[3] = pkcs12->mac_digest[3];
+
+  return (PARSER_OK);
+}
+
+static int module_hash_encode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const void *digest_buf, MAYBE_UNUSED const salt_t *salt, MAYBE_UNUSED const void *esalt_buf, MAYBE_UNUSED const void *hook_salt_buf, MAYBE_UNUSED const hashinfo_t *hash_info, char *line_buf, MAYBE_UNUSED const int line_size)
+{
+  const pkcs12_t *pkcs12 = (const pkcs12_t *) esalt_buf;
+
+  // salt
+
+  char salt_hex[PKCS12_MAX_SALT_HEX_LEN + 1] = { 0 };
+
+  hex_encode ((const u8 *) salt->salt_buf, salt->salt_len, (u8 *) salt_hex);
+
+  // mac
+
+  u32 mac_buf[5];
+
+  mac_buf[0] = byte_swap_32 (pkcs12->mac_digest[0]);
+  mac_buf[1] = byte_swap_32 (pkcs12->mac_digest[1]);
+  mac_buf[2] = byte_swap_32 (pkcs12->mac_digest[2]);
+  mac_buf[3] = byte_swap_32 (pkcs12->mac_digest[3]);
+  mac_buf[4] = byte_swap_32 (pkcs12->mac_digest[4]);
+
+  char mac_hex[41] = { 0 };
+
+  hex_encode ((const u8 *) mac_buf, 20, (u8 *) mac_hex);
+
+  // output
+
+  u8 *out_buf = (u8 *) line_buf;
+
+  int out_len = snprintf ((char *) out_buf, line_size, "%s1$%d$%d$%s$%d$",
+    SIGNATURE_PKCS12,
+    (int) salt->salt_iter + 1,
+    (int) salt->salt_len,
+    salt_hex,
+    pkcs12->data_len);
+
+  out_len += hex_encode ((const u8 *) pkcs12->data_buf, pkcs12->data_len, out_buf + out_len);
+
+  out_len += snprintf ((char *) out_buf + out_len, line_size - out_len, "$%s", mac_hex);
+
+  return out_len;
+}
+
+void module_init (module_ctx_t *module_ctx)
+{
+  module_init_common (module_ctx);
+
+  module_ctx->module_esalt_size               = module_esalt_size;
+  module_ctx->module_hash_decode              = module_hash_decode;
+  module_ctx->module_hash_encode              = module_hash_encode;
+  module_ctx->module_tmp_size                 = module_tmp_size;
+  module_ctx->module_usage_notice             = module_usage_notice;
+}

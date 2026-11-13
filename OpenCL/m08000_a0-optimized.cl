@@ -16,6 +16,26 @@
 #include M2S(INCLUDE_PATH/inc_hash_sha256.cl)
 #endif
 
+CONSTANT_VK u32a k_sha256[64] =
+{
+  SHA256C00, SHA256C01, SHA256C02, SHA256C03,
+  SHA256C04, SHA256C05, SHA256C06, SHA256C07,
+  SHA256C08, SHA256C09, SHA256C0a, SHA256C0b,
+  SHA256C0c, SHA256C0d, SHA256C0e, SHA256C0f,
+  SHA256C10, SHA256C11, SHA256C12, SHA256C13,
+  SHA256C14, SHA256C15, SHA256C16, SHA256C17,
+  SHA256C18, SHA256C19, SHA256C1a, SHA256C1b,
+  SHA256C1c, SHA256C1d, SHA256C1e, SHA256C1f,
+  SHA256C20, SHA256C21, SHA256C22, SHA256C23,
+  SHA256C24, SHA256C25, SHA256C26, SHA256C27,
+  SHA256C28, SHA256C29, SHA256C2a, SHA256C2b,
+  SHA256C2c, SHA256C2d, SHA256C2e, SHA256C2f,
+  SHA256C30, SHA256C31, SHA256C32, SHA256C33,
+  SHA256C34, SHA256C35, SHA256C36, SHA256C37,
+  SHA256C38, SHA256C39, SHA256C3a, SHA256C3b,
+  SHA256C3c, SHA256C3d, SHA256C3e, SHA256C3f,
+};
+
 DECLSPEC void sha256_transform_m (PRIVATE_AS u32x *digest, PRIVATE_AS const u32x *w)
 {
   u32x a = digest[0];
@@ -167,7 +187,17 @@ DECLSPEC void sha256_transform_z (PRIVATE_AS u32x *digest)
   digest[7] += h;
 }
 
-DECLSPEC void sha256_transform_s (PRIVATE_AS u32x *digest, LOCAL_AS u32 *w)
+// An association attack takes its salt from the global id, so the message schedule below cannot be
+// shared across the workgroup and every thread keeps its own. The address space of the schedule, and
+// of this function's argument, follows the attack.
+
+#if ATTACK_MODE == 9
+#define SALT_SCHEDULE_AS PRIVATE_AS
+#else
+#define SALT_SCHEDULE_AS LOCAL_AS
+#endif
+
+DECLSPEC void sha256_transform_s (PRIVATE_AS u32x *digest, SALT_SCHEDULE_AS u32 *w)
 {
   u32x a = digest[0];
   u32x b = digest[1];
@@ -232,6 +262,15 @@ KERNEL_FQ KERNEL_FA void m08000_m04 (KERN_ATTR_RULES ())
    * salt
    */
 
+  #if ATTACK_MODE == 9
+
+  // The salt index is the work item id here, so a thread past the count reads past the end of
+  // salt_bufs. No barrier stands above, so the bound goes here.
+
+  if (gid >= GID_CNT) return;
+
+  #endif
+
   const u32 salt_buf0 = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 0]);
   const u32 salt_buf1 = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 1]);
   const u32 salt_buf2 = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 2]); // 0x80
@@ -239,6 +278,25 @@ KERNEL_FQ KERNEL_FA void m08000_m04 (KERN_ATTR_RULES ())
   /**
    * precompute final msg blocks
    */
+
+  #if ATTACK_MODE == 9
+
+  // The schedule thread zero precomputes would be handed to every other thread of the workgroup
+  // along with the wrong salt, so each thread builds its own. One candidate is tried per hash in
+  // this attack, so the schedule is built once and read once.
+
+  u32 w_s1[64];
+  u32 w_s2[64];
+
+  for (u32 i = 0; i < 64; i++)
+  {
+    w_s1[i] = 0;
+    w_s2[i] = 0;
+  }
+
+  {
+
+  #else
 
   LOCAL_VK u32 w_s1[64];
   LOCAL_VK u32 w_s2[64];
@@ -253,6 +311,9 @@ KERNEL_FQ KERNEL_FA void m08000_m04 (KERN_ATTR_RULES ())
 
   if (lid == 0)
   {
+
+  #endif
+
     w_s1[15] =               0 | salt_buf0 >> 16;
 
     #ifdef _unroll
@@ -277,9 +338,17 @@ KERNEL_FQ KERNEL_FA void m08000_m04 (KERN_ATTR_RULES ())
     }
   }
 
+  #if ATTACK_MODE == 9
+
+  // the guard above already ran, and nothing is shared to synchronise on
+
+  #else
+
   SYNC_THREADS ();
 
   if (gid >= GID_CNT) return;
+
+  #endif
 
   /**
    * base
@@ -403,6 +472,15 @@ KERNEL_FQ KERNEL_FA void m08000_s04 (KERN_ATTR_RULES ())
    * salt
    */
 
+  #if ATTACK_MODE == 9
+
+  // The salt index is the work item id here, so a thread past the count reads past the end of
+  // salt_bufs. No barrier stands above, so the bound goes here.
+
+  if (gid >= GID_CNT) return;
+
+  #endif
+
   const u32 salt_buf0 = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 0]);
   const u32 salt_buf1 = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 1]);
   const u32 salt_buf2 = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 2]); // 0x80
@@ -410,6 +488,25 @@ KERNEL_FQ KERNEL_FA void m08000_s04 (KERN_ATTR_RULES ())
   /**
    * precompute final msg blocks
    */
+
+  #if ATTACK_MODE == 9
+
+  // The schedule thread zero precomputes would be handed to every other thread of the workgroup
+  // along with the wrong salt, so each thread builds its own. One candidate is tried per hash in
+  // this attack, so the schedule is built once and read once.
+
+  u32 w_s1[64];
+  u32 w_s2[64];
+
+  for (u32 i = 0; i < 64; i++)
+  {
+    w_s1[i] = 0;
+    w_s2[i] = 0;
+  }
+
+  {
+
+  #else
 
   LOCAL_VK u32 w_s1[64];
   LOCAL_VK u32 w_s2[64];
@@ -424,6 +521,9 @@ KERNEL_FQ KERNEL_FA void m08000_s04 (KERN_ATTR_RULES ())
 
   if (lid == 0)
   {
+
+  #endif
+
     w_s1[15] =               0 | salt_buf0 >> 16;
 
     #ifdef _unroll
@@ -448,9 +548,17 @@ KERNEL_FQ KERNEL_FA void m08000_s04 (KERN_ATTR_RULES ())
     }
   }
 
+  #if ATTACK_MODE == 9
+
+  // the guard above already ran, and nothing is shared to synchronise on
+
+  #else
+
   SYNC_THREADS ();
 
   if (gid >= GID_CNT) return;
+
+  #endif
 
   /**
    * base

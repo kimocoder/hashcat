@@ -16,6 +16,11 @@
 #define RULES_MAX 32
 #define MAX_KERNEL_RULES (RULES_MAX - 1)
 
+// How many draws in a row may repeat a rule -g already has before it stops with fewer rules than
+// were asked for.
+
+#define RP_GEN_REPEATS_MAX 100000
+
 typedef struct
 {
   char *grp_op_nop_selection;
@@ -26,6 +31,7 @@ typedef struct
   char *grp_op_pos_chr_selection;
   char *grp_op_pos_pos0_selection;
   char *grp_op_pos_pos1_selection;
+  char *grp_op_pos_chr_chr_selection;
 
   int grp_op_nop_cnt;
   int grp_op_pos_p0_cnt;
@@ -35,18 +41,22 @@ typedef struct
   int grp_op_pos_chr_cnt;
   int grp_op_pos_pos0_cnt;
   int grp_op_pos_pos1_cnt;
+  int grp_op_pos_chr_chr_cnt;
 
-  // 8 if all operator group types used, but can be lower if user is using operator selection options
+  // 9 if all operator group types used, but can be lower if user is using operator selection options
 
-  int grp_op_alias_buf[8];
+  int grp_op_alias_buf[9];
   int grp_op_alias_cnt;
 
 } rp_gen_ops_t;
 
-bool class_num   (const u8 c);
-bool class_lower (const u8 c);
-bool class_upper (const u8 c);
-bool class_alpha (const u8 c);
+bool class_num       (const u8 c);
+bool class_lower     (const u8 c);
+bool class_upper     (const u8 c);
+bool class_lower_hex (const u8 c);
+bool class_upper_hex (const u8 c);
+bool class_sym       (const u8 c);
+bool class_alpha     (const u8 c);
 
 int conv_ctoi (const u8 c);
 int conv_itoc (const u8 c);
@@ -55,6 +65,7 @@ int generate_random_rule (char rule_buf[RP_RULE_SIZE], const u32 rp_gen_func_min
 
 bool is_hex_notation (const char *rule_buf, u32 rule_len, u32 rule_pos);
 
+u32 rule_utf8_len (const char *rule_buf, const u32 rule_len, const u32 rule_pos);
 int cpu_rule_to_kernel_rule (char *rule_buf, u32 rule_len, kernel_rule_t *rule);
 int kernel_rule_to_cpu_rule (char *rule_buf, kernel_rule_t *rule);
 

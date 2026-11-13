@@ -41,7 +41,7 @@ DECLSPEC void generate_pw (PRIVATE_AS u32 *pw_buf, GLOBAL_AS const cs_t *root_cs
   const u32 jd4 = j / 4;
   const u32 jm4 = j % 4;
 
-  pw_buf[jd4] |= (0xff << (jm4 * 8)) & mask80;
+  pw_buf[jd4] |= (0xffu << (jm4 * 8)) & mask80;
 
   if (bits14) pw_buf[14] = (pw_l_len + pw_r_len) * 8;
   if (bits15) pw_buf[15] = (pw_l_len + pw_r_len) * 8;
@@ -200,7 +200,23 @@ KERNEL_FQ KERNEL_FA void r_markov (KERN_ATTR_R_MARKOV)
   pw.i[62] = 0;
   pw.i[63] = 0;
 
-  generate_pw (pw.i, root_css_buf, markov_css_buf, pw_r_len, 0, 0, 0, 0, off + gid);
+  // The right side is walked with its highest position as its lowest digit, so that consecutive
+  // words share their low bytes. Every position has a fixed radix, so the digits are taken in that
+  // order and put back in the order generate_pw () takes them.
+
+  u64 val = off + gid;
+  u64 fwd = 0;
+
+  for (u32 i = pw_r_len; i > 0; i--)
+  {
+    const u32 len = root_css_buf[i - 1].cs_len;
+
+    fwd = (fwd * len) + (u32) (val % len);
+
+    val /= len;
+  }
+
+  generate_pw (pw.i, root_css_buf, markov_css_buf, pw_r_len, 0, 0, 0, 0, fwd);
 
   pws_buf_r[gid].i = pw.i[0];
 }

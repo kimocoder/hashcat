@@ -9,6 +9,7 @@
 #include "bitops.h"
 #include "convert.h"
 #include "shared.h"
+#include "parser.h"
 
 static const u32   ATTACK_EXEC    = ATTACK_EXEC_OUTSIDE_KERNEL;
 static const u32   DGST_POS0      = 0;
@@ -17,71 +18,73 @@ static const u32   DGST_POS2      = 2;
 static const u32   DGST_POS3      = 3;
 static const u32   DGST_SIZE      = DGST_SIZE_4_4;
 static const u32   HASH_CATEGORY  = HASH_CATEGORY_NETWORK_PROTOCOL;
-static const char *HASH_NAME      = "Kerberos 5, etype 18, Pre-Auth";
+static const char *HASH_NAME      = "Kerberos 5, etype 18, AS-REQ Pre-Auth";
 static const u64   KERN_TYPE      = 19900;
 static const u32   OPTI_TYPE      = OPTI_TYPE_ZERO_BYTE
                                   | OPTI_TYPE_NOT_ITERATED
                                   | OPTI_TYPE_SLOW_HASH_SIMD_LOOP;
 static const u64   OPTS_TYPE      = OPTS_TYPE_STOCK_MODULE
-                                  | OPTS_TYPE_PT_GENERATE_LE;
+                                  | OPTS_TYPE_PT_GENERATE_LE
+                                  | OPTS_TYPE_DEEP_COMP_KERNEL;
 static const u32   SALT_TYPE      = SALT_TYPE_EMBEDDED;
 static const char *ST_PASS        = "hashcat";
 static const char *ST_HASH        = "$krb5pa$18$hashcat$HASHCATDOMAIN.COM$96c289009b05181bfd32062962740b1b1ce5f74eb12e0266cde74e81094661addab08c0c1a178882c91a0ed89ae4e0e68d2820b9cce69770";
 
-u32         module_attack_exec    (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra) { return ATTACK_EXEC;     }
-u32         module_dgst_pos0      (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra) { return DGST_POS0;       }
-u32         module_dgst_pos1      (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra) { return DGST_POS1;       }
-u32         module_dgst_pos2      (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra) { return DGST_POS2;       }
-u32         module_dgst_pos3      (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra) { return DGST_POS3;       }
-u32         module_dgst_size      (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra) { return DGST_SIZE;       }
-u32         module_hash_category  (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra) { return HASH_CATEGORY;   }
-const char *module_hash_name      (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra) { return HASH_NAME;       }
-u64         module_kern_type      (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra) { return KERN_TYPE;       }
-u32         module_opti_type      (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra) { return OPTI_TYPE;       }
-u64         module_opts_type      (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra) { return OPTS_TYPE;       }
-u32         module_salt_type      (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra) { return SALT_TYPE;       }
-const char *module_st_hash        (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra) { return ST_HASH;         }
-const char *module_st_pass        (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra) { return ST_PASS;         }
+#include "hooks_common.c"
+
+#define MAX_USER_LEN  511
+#define MAX_REALM_LEN 511
+#define MAX_CHECKSUM_LEN 12
+#define MAX_ENC_TS_LEN 128
+#define MAX_KDC_SALT_LEN 1022
 
 typedef struct krb5pa_18
 {
   u32 user[128];
-  u32 domain[128];
-  u32 account_info[512];
-  u32 account_info_len;
+  u32 realm[128];
+  u32 kdc_salt[256];
+  u32 kdc_salt_len;
 
   u32 checksum[3];
-  u32 enc_timestamp[32];
+  u32 enc_timestamp[MAX_ENC_TS_LEN / 4];
   u32 enc_timestamp_len;
 
+  u32 format;
+
 } krb5pa_18_t;
+
 
 typedef struct krb5pa_18_tmp
 {
   u32 ipad[5];
   u32 opad[5];
-  u32 dgst[16];
-  u32 out[16];
+  u32 dgst[10];
+  u32 out[10];
 
 } krb5pa_18_tmp_t;
 
 static const char *SIGNATURE_KRB5PA = "$krb5pa$18$";
 
-u64 module_tmp_size (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra)
+static u32 module_deep_comp_kernel (MAYBE_UNUSED const hashes_t *hashes, MAYBE_UNUSED const u32 salt_pos, MAYBE_UNUSED const u32 digest_pos)
+{
+  return KERN_RUN_3;
+}
+
+static u64 module_tmp_size (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra)
 {
   const u64 tmp_size = (const u64) sizeof (krb5pa_18_tmp_t);
 
   return tmp_size;
 }
 
-u64 module_esalt_size (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra)
+static u64 module_esalt_size (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra)
 {
   const u64 esalt_size = (const u64) sizeof (krb5pa_18_t);
 
   return esalt_size;
 }
 
-int module_hash_decode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED void *digest_buf, MAYBE_UNUSED salt_t *salt, MAYBE_UNUSED void *esalt_buf, MAYBE_UNUSED void *hook_salt_buf, MAYBE_UNUSED hashinfo_t *hash_info, const char *line_buf, MAYBE_UNUSED const int line_len)
+static int module_hash_decode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED void *digest_buf, MAYBE_UNUSED salt_t *salt, MAYBE_UNUSED void *esalt_buf, MAYBE_UNUSED void *hook_salt_buf, MAYBE_UNUSED hashinfo_t *hash_info, const char *line_buf, MAYBE_UNUSED const int line_len)
 {
   u32 *digest = (u32 *) digest_buf;
 
@@ -98,78 +101,167 @@ int module_hash_decode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSE
   token.attr[0] = TOKEN_ATTR_FIXED_LENGTH
                 | TOKEN_ATTR_VERIFY_SIGNATURE;
 
-  /**
-   * $krb5pa$18$*user*realm*$enc_timestamp+checksum
-   */
-
-  // assume no signature found
   if (line_len < 11) return (PARSER_SALT_LENGTH);
 
-  // assume $krb5pa$18$user$realm$enc_timestamp+checksum
+  /**
+   * format 1: $krb5pa$18$user$realm$enc_timestamp+checksum           (single field)
+   * format 2: $krb5pa$18$user$realm$$enc_timestamp+checksum          (empty salt)
+   * format 3: $krb5pa$18$user$realm$salt$enc_timestamp+checksum      (explicit salt)
+   * format 4: $krb5pa$18$user$realm$checksum$enc_timestamp               (split fields)
+   */
+
+  int sep_cnt = 0;
+
+  for (int i = 0; i < line_len; i++)
+  {
+    if (line_buf[i] == '$') sep_cnt++;
+  }
+
   token.token_cnt  = 4;
 
   token.sep[1]     = '$';
   token.len_min[1] = 1;
-  token.len_max[1] = 512;
+  token.len_max[1] = MAX_USER_LEN;
   token.attr[1]    = TOKEN_ATTR_VERIFY_LENGTH;
 
   token.sep[2]     = '$';
   token.len_min[2] = 1;
-  token.len_max[2] = 512;
+  token.len_max[2] = MAX_REALM_LEN;
   token.attr[2]    = TOKEN_ATTR_VERIFY_LENGTH;
 
-  token.sep[3]     = '$';
-  token.len_min[3] = 104;
-  token.len_max[3] = 112;
-  token.attr[3]    = TOKEN_ATTR_VERIFY_LENGTH
-                   | TOKEN_ATTR_VERIFY_HEX;
+  if (sep_cnt >= 6)
+  {
+    // format 2/3: $krb5pa$18$user$realm$[salt]$data (data 104-112 hex)
+    krb5pa->format = 2;
 
-  const int rc_tokenizer = input_tokenizer ((const u8 *) line_buf, line_len, &token);
+    token.token_cnt  = 5;
 
-  if (rc_tokenizer != PARSER_OK) return (rc_tokenizer);
+    token.sep[3]     = '$';
+    token.len_min[3] = 0;
+    token.len_max[3] = MAX_KDC_SALT_LEN;
+    token.attr[3]    = TOKEN_ATTR_VERIFY_LENGTH;
+
+    token.sep[4]     = '$';
+    token.len_min[4] = 104;
+    token.len_max[4] = 112;
+    token.attr[4]    = TOKEN_ATTR_VERIFY_LENGTH
+                     | TOKEN_ATTR_VERIFY_HEX;
+  }
+  else
+  {
+    // format 1: $krb5pa$18$user$realm$data (single field)
+    krb5pa->format = 1;
+
+    token.sep[3]     = '$';
+    token.len_min[3] = 104;
+    token.len_max[3] = 112;
+    token.attr[3]    = TOKEN_ATTR_VERIFY_LENGTH
+                     | TOKEN_ATTR_VERIFY_HEX;
+  }
+
+  int rc_tokenizer = input_tokenizer ((const u8 *) line_buf, line_len, &token);
+
+  if (rc_tokenizer != PARSER_OK)
+  {
+    if (sep_cnt == 6)
+    {
+      // format 4: $krb5pa$18$user$realm$checksum(24)$enc_timestamp(80-88)
+      krb5pa->format = 4;
+
+      token.token_cnt  = 5;
+
+      token.sep[3]     = '$';
+      token.len[3]     = 24;
+      token.attr[3]    = TOKEN_ATTR_FIXED_LENGTH
+                       | TOKEN_ATTR_VERIFY_HEX;
+
+      token.sep[4]     = '$';
+      token.len_min[4] = 80;
+      token.len_max[4] = 88;
+      token.attr[4]    = TOKEN_ATTR_VERIFY_LENGTH
+                       | TOKEN_ATTR_VERIFY_HEX;
+
+      rc_tokenizer = input_tokenizer ((const u8 *) line_buf, line_len, &token);
+    }
+
+    if (rc_tokenizer != PARSER_OK) return (rc_tokenizer);
+  }
 
   const u8 *user_pos;
-  const u8 *domain_pos;
+  const u8 *realm_pos;
   const u8 *data_pos;
   const u8 *checksum_pos;
 
   int user_len;
-  int domain_len;
+  int realm_len;
   int data_len;
-  int account_info_len;
+  int kdc_salt_len;
 
   user_pos = token.buf[1];
   user_len = token.len[1];
 
   memcpy (krb5pa->user, user_pos, user_len);
 
-  domain_pos = token.buf[2];
-  domain_len = token.len[2];
+  realm_pos = token.buf[2];
+  realm_len = token.len[2];
 
-  memcpy (krb5pa->domain, domain_pos, domain_len);
+  memcpy (krb5pa->realm, realm_pos, realm_len);
 
-  data_pos = token.buf[3];
-  data_len = token.len[3];
+  u8 *kdc_salt_ptr = (u8 *) krb5pa->kdc_salt;
 
-  account_info_len = token.len[2] + token.len[1];
+  if ((krb5pa->format == 2) && (token.len[3] > 0))
+  {
+    krb5pa->format = 3;
 
-  u8 *account_info_ptr = (u8 *) krb5pa->account_info;
+    const u8 *salt_pos = token.buf[3];
 
-  // domain must be uppercase
+    kdc_salt_len = token.len[3];
 
-  u8 domain[128];
+    memcpy (kdc_salt_ptr, salt_pos, kdc_salt_len);
 
-  memcpy (domain, domain_pos, domain_len);
-  uppercase (domain, domain_len);
+    data_pos = token.buf[4];
+    data_len = token.len[4];
 
-  memcpy (account_info_ptr, domain, domain_len);
-  memcpy (account_info_ptr + domain_len, user_pos, user_len);
+    checksum_pos = data_pos + data_len - 24;
+    data_len = data_len - 24;
+  }
+  else
+  {
+    u8 realm[512];
 
-  krb5pa->account_info_len = account_info_len;
+    memcpy (realm, realm_pos, realm_len);
+    uppercase (realm, realm_len);
 
-  // Split checksum
-  checksum_pos = data_pos + data_len - 24;
-  data_len = data_len - 24;
+    kdc_salt_len = token.len[2] + token.len[1];
+
+    memcpy (kdc_salt_ptr, realm, realm_len);
+    memcpy (kdc_salt_ptr + realm_len, user_pos, user_len);
+
+    if (krb5pa->format == 4)
+    {
+      checksum_pos = token.buf[3];
+      data_pos = token.buf[4];
+      data_len = token.len[4];
+    }
+    else if (krb5pa->format == 2)
+    {
+      data_pos = token.buf[4];
+      data_len = token.len[4];
+
+      checksum_pos = data_pos + data_len - 24;
+      data_len = data_len - 24;
+    }
+    else
+    {
+      data_pos = token.buf[3];
+      data_len = token.len[3];
+
+      checksum_pos = data_pos + data_len - 24;
+      data_len = data_len - 24;
+    }
+  }
+
+  krb5pa->kdc_salt_len = kdc_salt_len;
 
   // hmac-sha1 is reduced to 12 bytes
   krb5pa->checksum[0] = byte_swap_32 (hex_to_u32 (checksum_pos +  0));
@@ -178,7 +270,12 @@ int module_hash_decode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSE
 
   u8 *edata_ptr = (u8 *) krb5pa->enc_timestamp;
 
-  for (int i = 0; i < data_len; i += 2)
+  if (data_len & 1) return (PARSER_TOKEN_LENGTH);
+
+  // i + 1, not i: the loop reads two characters per byte, so an odd data_len read one past the
+  // token, which is the next field of the line or the caller's terminator
+
+  for (int i = 0; (i + 1) < data_len; i += 2)
   {
     const u8 p0 = data_pos[i + 0];
     const u8 p1 = data_pos[i + 1];
@@ -189,11 +286,23 @@ int module_hash_decode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSE
 
   krb5pa->enc_timestamp_len = data_len / 2;
 
-  salt->salt_buf[0] = krb5pa->checksum[0];
-  salt->salt_buf[1] = krb5pa->checksum[1];
-  salt->salt_buf[2] = krb5pa->checksum[2];
+  if (krb5pa->kdc_salt_len > 256)
+  {
+    salt->salt_buf[0] = krb5pa->checksum[0];
+    salt->salt_buf[1] = krb5pa->checksum[1];
+    salt->salt_buf[2] = krb5pa->checksum[2];
 
-  salt->salt_len = 12;
+    salt->salt_len = 12;
+  }
+  else
+  {
+    const int kdc_salt_words = (krb5pa->kdc_salt_len + 3) / 4;
+
+    for (int i = 0; i < kdc_salt_words; i++)
+      salt->salt_buf[i] = krb5pa->kdc_salt[i];
+
+    salt->salt_len = krb5pa->kdc_salt_len;
+  }
 
   salt->salt_iter = 4096 - 1;
 
@@ -205,7 +314,7 @@ int module_hash_decode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSE
   return (PARSER_OK);
 }
 
-int module_hash_encode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const void *digest_buf, MAYBE_UNUSED const salt_t *salt, MAYBE_UNUSED const void *esalt_buf, MAYBE_UNUSED const void *hook_salt_buf, MAYBE_UNUSED const hashinfo_t *hash_info, char *line_buf, MAYBE_UNUSED const int line_size)
+static int module_hash_encode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const void *digest_buf, MAYBE_UNUSED const salt_t *salt, MAYBE_UNUSED const void *esalt_buf, MAYBE_UNUSED const void *hook_salt_buf, MAYBE_UNUSED const hashinfo_t *hash_info, char *line_buf, MAYBE_UNUSED const int line_size)
 {
   const krb5pa_18_t *krb5pa = (const krb5pa_18_t *) esalt_buf;
 
@@ -218,96 +327,68 @@ int module_hash_encode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSE
     snprintf (data + j, 3, "%02x", ptr_enc_timestamp[i]);
   }
 
-  const int line_len = snprintf (line_buf, line_size, "%s%s$%s$%s%08x%08x%08x",
-    SIGNATURE_KRB5PA,
-    (const char *) krb5pa->user,
-    (const char *) krb5pa->domain,
-    data,
-    krb5pa->checksum[0],
-    krb5pa->checksum[1],
-    krb5pa->checksum[2]);
+  int line_len;
+
+  if (krb5pa->format == 4)
+  {
+    line_len = snprintf (line_buf, line_size, "%s%s$%s$%08x%08x%08x$%s",
+      SIGNATURE_KRB5PA,
+      (const char *) krb5pa->user,
+      (const char *) krb5pa->realm,
+      krb5pa->checksum[0],
+      krb5pa->checksum[1],
+      krb5pa->checksum[2],
+      data);
+  }
+  else if (krb5pa->format == 3)
+  {
+    char salt_str[512 + 1] = { 0 };
+
+    memcpy (salt_str, (const char *) krb5pa->kdc_salt, krb5pa->kdc_salt_len);
+
+    line_len = snprintf (line_buf, line_size, "%s%s$%s$%s$%s%08x%08x%08x",
+      SIGNATURE_KRB5PA,
+      (const char *) krb5pa->user,
+      (const char *) krb5pa->realm,
+      salt_str,
+      data,
+      krb5pa->checksum[0],
+      krb5pa->checksum[1],
+      krb5pa->checksum[2]);
+  }
+  else if (krb5pa->format == 2)
+  {
+    line_len = snprintf (line_buf, line_size, "%s%s$%s$$%s%08x%08x%08x",
+      SIGNATURE_KRB5PA,
+      (const char *) krb5pa->user,
+      (const char *) krb5pa->realm,
+      data,
+      krb5pa->checksum[0],
+      krb5pa->checksum[1],
+      krb5pa->checksum[2]);
+  }
+  else
+  {
+    line_len = snprintf (line_buf, line_size, "%s%s$%s$%s%08x%08x%08x",
+      SIGNATURE_KRB5PA,
+      (const char *) krb5pa->user,
+      (const char *) krb5pa->realm,
+      data,
+      krb5pa->checksum[0],
+      krb5pa->checksum[1],
+      krb5pa->checksum[2]);
+  }
 
   return line_len;
 }
 
 void module_init (module_ctx_t *module_ctx)
 {
-  module_ctx->module_context_size             = MODULE_CONTEXT_SIZE_CURRENT;
-  module_ctx->module_interface_version        = MODULE_INTERFACE_VERSION_CURRENT;
+  module_init_common (module_ctx);
 
-  module_ctx->module_attack_exec              = module_attack_exec;
-  module_ctx->module_benchmark_esalt          = MODULE_DEFAULT;
-  module_ctx->module_benchmark_hook_salt      = MODULE_DEFAULT;
-  module_ctx->module_benchmark_mask           = MODULE_DEFAULT;
-  module_ctx->module_benchmark_charset        = MODULE_DEFAULT;
-  module_ctx->module_benchmark_salt           = MODULE_DEFAULT;
-  module_ctx->module_bridge_name              = MODULE_DEFAULT;
-  module_ctx->module_bridge_type              = MODULE_DEFAULT;
-  module_ctx->module_build_plain_postprocess  = MODULE_DEFAULT;
-  module_ctx->module_deep_comp_kernel         = MODULE_DEFAULT;
-  module_ctx->module_deprecated_notice        = MODULE_DEFAULT;
-  module_ctx->module_dgst_pos0                = module_dgst_pos0;
-  module_ctx->module_dgst_pos1                = module_dgst_pos1;
-  module_ctx->module_dgst_pos2                = module_dgst_pos2;
-  module_ctx->module_dgst_pos3                = module_dgst_pos3;
-  module_ctx->module_dgst_size                = module_dgst_size;
-  module_ctx->module_dictstat_disable         = MODULE_DEFAULT;
   module_ctx->module_esalt_size               = module_esalt_size;
-  module_ctx->module_extra_buffer_size        = MODULE_DEFAULT;
-  module_ctx->module_extra_tmp_size           = MODULE_DEFAULT;
-  module_ctx->module_extra_tuningdb_block     = MODULE_DEFAULT;
-  module_ctx->module_forced_outfile_format    = MODULE_DEFAULT;
-  module_ctx->module_hash_binary_count        = MODULE_DEFAULT;
-  module_ctx->module_hash_binary_parse        = MODULE_DEFAULT;
-  module_ctx->module_hash_binary_save         = MODULE_DEFAULT;
-  module_ctx->module_hash_decode_postprocess  = MODULE_DEFAULT;
-  module_ctx->module_hash_decode_potfile      = MODULE_DEFAULT;
-  module_ctx->module_hash_decode_zero_hash    = MODULE_DEFAULT;
+  module_ctx->module_deep_comp_kernel         = module_deep_comp_kernel;
   module_ctx->module_hash_decode              = module_hash_decode;
-  module_ctx->module_hash_encode_status       = MODULE_DEFAULT;
-  module_ctx->module_hash_encode_potfile      = MODULE_DEFAULT;
   module_ctx->module_hash_encode              = module_hash_encode;
-  module_ctx->module_hash_init_selftest       = MODULE_DEFAULT;
-  module_ctx->module_hash_mode                = MODULE_DEFAULT;
-  module_ctx->module_hash_category            = module_hash_category;
-  module_ctx->module_hash_name                = module_hash_name;
-  module_ctx->module_hashes_count_min         = MODULE_DEFAULT;
-  module_ctx->module_hashes_count_max         = MODULE_DEFAULT;
-  module_ctx->module_hlfmt_disable            = MODULE_DEFAULT;
-  module_ctx->module_hook_extra_param_size    = MODULE_DEFAULT;
-  module_ctx->module_hook_extra_param_init    = MODULE_DEFAULT;
-  module_ctx->module_hook_extra_param_term    = MODULE_DEFAULT;
-  module_ctx->module_hook12                   = MODULE_DEFAULT;
-  module_ctx->module_hook23                   = MODULE_DEFAULT;
-  module_ctx->module_hook_salt_size           = MODULE_DEFAULT;
-  module_ctx->module_hook_size                = MODULE_DEFAULT;
-  module_ctx->module_jit_build_options        = MODULE_DEFAULT;
-  module_ctx->module_jit_cache_disable        = MODULE_DEFAULT;
-  module_ctx->module_kernel_accel_max         = MODULE_DEFAULT;
-  module_ctx->module_kernel_accel_min         = MODULE_DEFAULT;
-  module_ctx->module_kernel_loops_max         = MODULE_DEFAULT;
-  module_ctx->module_kernel_loops_min         = MODULE_DEFAULT;
-  module_ctx->module_kernel_threads_max       = MODULE_DEFAULT;
-  module_ctx->module_kernel_threads_min       = MODULE_DEFAULT;
-  module_ctx->module_kern_type                = module_kern_type;
-  module_ctx->module_kern_type_dynamic        = MODULE_DEFAULT;
-  module_ctx->module_opti_type                = module_opti_type;
-  module_ctx->module_opts_type                = module_opts_type;
-  module_ctx->module_outfile_check_disable    = MODULE_DEFAULT;
-  module_ctx->module_outfile_check_nocomp     = MODULE_DEFAULT;
-  module_ctx->module_potfile_custom_check     = MODULE_DEFAULT;
-  module_ctx->module_potfile_disable          = MODULE_DEFAULT;
-  module_ctx->module_potfile_keep_all_hashes  = MODULE_DEFAULT;
-  module_ctx->module_pwdump_column            = MODULE_DEFAULT;
-  module_ctx->module_pw_max                   = MODULE_DEFAULT;
-  module_ctx->module_pw_min                   = MODULE_DEFAULT;
-  module_ctx->module_salt_max                 = MODULE_DEFAULT;
-  module_ctx->module_salt_min                 = MODULE_DEFAULT;
-  module_ctx->module_salt_type                = module_salt_type;
-  module_ctx->module_separator                = MODULE_DEFAULT;
-  module_ctx->module_st_hash                  = module_st_hash;
-  module_ctx->module_st_pass                  = module_st_pass;
   module_ctx->module_tmp_size                 = module_tmp_size;
-  module_ctx->module_unstable_warning         = MODULE_DEFAULT;
-  module_ctx->module_warmup_disable           = MODULE_DEFAULT;
 }

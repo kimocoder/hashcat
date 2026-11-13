@@ -9,6 +9,7 @@
 #include "inc_common.h"
 #include "inc_hash_sha512.h"
 
+/* v7: outdated
 CONSTANT_VK u64a k_sha512[80] =
 {
   SHA512C00, SHA512C01, SHA512C02, SHA512C03,
@@ -32,6 +33,7 @@ CONSTANT_VK u64a k_sha512[80] =
   SHA512C48, SHA512C49, SHA512C4a, SHA512C4b,
   SHA512C4c, SHA512C4d, SHA512C4e, SHA512C4f,
 };
+*/
 
 // important notes on this:
 // input buf unused bytes needs to be set to zero
@@ -66,6 +68,7 @@ DECLSPEC void sha512_transform (PRIVATE_AS const u32 *w0, PRIVATE_AS const u32 *
   u64 we_t = hl32_to_64_S (w7[0], w7[1]);
   u64 wf_t = hl32_to_64_S (w7[2], w7[3]);
 
+  /* v7: outdated
   #define ROUND_EXPAND_S()                            \
   {                                                   \
     w0_t = SHA512_EXPAND_S (we_t, w9_t, w1_t, w0_t);  \
@@ -108,9 +111,6 @@ DECLSPEC void sha512_transform (PRIVATE_AS const u32 *w0, PRIVATE_AS const u32 *
 
   ROUND_STEP_S (0);
 
-  #ifdef _unroll
-  #pragma unroll
-  #endif
   for (int i = 16; i < 80; i += 16)
   {
     ROUND_EXPAND_S (); ROUND_STEP_S (i);
@@ -118,6 +118,88 @@ DECLSPEC void sha512_transform (PRIVATE_AS const u32 *w0, PRIVATE_AS const u32 *
 
   #undef ROUND_EXPAND_S
   #undef ROUND_STEP_S
+  */
+
+                                                   SHA512_STEP_S (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w0_t, SHA512C00);
+                                                   SHA512_STEP_S (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w1_t, SHA512C01);
+                                                   SHA512_STEP_S (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, w2_t, SHA512C02);
+                                                   SHA512_STEP_S (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, w3_t, SHA512C03);
+                                                   SHA512_STEP_S (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, w4_t, SHA512C04);
+                                                   SHA512_STEP_S (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, w5_t, SHA512C05);
+                                                   SHA512_STEP_S (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, w6_t, SHA512C06);
+                                                   SHA512_STEP_S (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, w7_t, SHA512C07);
+                                                   SHA512_STEP_S (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w8_t, SHA512C08);
+                                                   SHA512_STEP_S (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w9_t, SHA512C09);
+                                                   SHA512_STEP_S (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, wa_t, SHA512C0a);
+                                                   SHA512_STEP_S (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, wb_t, SHA512C0b);
+                                                   SHA512_STEP_S (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, wc_t, SHA512C0c);
+                                                   SHA512_STEP_S (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, wd_t, SHA512C0d);
+                                                   SHA512_STEP_S (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, we_t, SHA512C0e);
+                                                   SHA512_STEP_S (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, wf_t, SHA512C0f);
+  w0_t = SHA512_EXPAND_S (we_t, w9_t, w1_t, w0_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w0_t, SHA512C10);
+  w1_t = SHA512_EXPAND_S (wf_t, wa_t, w2_t, w1_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w1_t, SHA512C11);
+  w2_t = SHA512_EXPAND_S (w0_t, wb_t, w3_t, w2_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, w2_t, SHA512C12);
+  w3_t = SHA512_EXPAND_S (w1_t, wc_t, w4_t, w3_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, w3_t, SHA512C13);
+  w4_t = SHA512_EXPAND_S (w2_t, wd_t, w5_t, w4_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, w4_t, SHA512C14);
+  w5_t = SHA512_EXPAND_S (w3_t, we_t, w6_t, w5_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, w5_t, SHA512C15);
+  w6_t = SHA512_EXPAND_S (w4_t, wf_t, w7_t, w6_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, w6_t, SHA512C16);
+  w7_t = SHA512_EXPAND_S (w5_t, w0_t, w8_t, w7_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, w7_t, SHA512C17);
+  w8_t = SHA512_EXPAND_S (w6_t, w1_t, w9_t, w8_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w8_t, SHA512C18);
+  w9_t = SHA512_EXPAND_S (w7_t, w2_t, wa_t, w9_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w9_t, SHA512C19);
+  wa_t = SHA512_EXPAND_S (w8_t, w3_t, wb_t, wa_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, wa_t, SHA512C1a);
+  wb_t = SHA512_EXPAND_S (w9_t, w4_t, wc_t, wb_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, wb_t, SHA512C1b);
+  wc_t = SHA512_EXPAND_S (wa_t, w5_t, wd_t, wc_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, wc_t, SHA512C1c);
+  wd_t = SHA512_EXPAND_S (wb_t, w6_t, we_t, wd_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, wd_t, SHA512C1d);
+  we_t = SHA512_EXPAND_S (wc_t, w7_t, wf_t, we_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, we_t, SHA512C1e);
+  wf_t = SHA512_EXPAND_S (wd_t, w8_t, w0_t, wf_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, wf_t, SHA512C1f);
+  w0_t = SHA512_EXPAND_S (we_t, w9_t, w1_t, w0_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w0_t, SHA512C20);
+  w1_t = SHA512_EXPAND_S (wf_t, wa_t, w2_t, w1_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w1_t, SHA512C21);
+  w2_t = SHA512_EXPAND_S (w0_t, wb_t, w3_t, w2_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, w2_t, SHA512C22);
+  w3_t = SHA512_EXPAND_S (w1_t, wc_t, w4_t, w3_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, w3_t, SHA512C23);
+  w4_t = SHA512_EXPAND_S (w2_t, wd_t, w5_t, w4_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, w4_t, SHA512C24);
+  w5_t = SHA512_EXPAND_S (w3_t, we_t, w6_t, w5_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, w5_t, SHA512C25);
+  w6_t = SHA512_EXPAND_S (w4_t, wf_t, w7_t, w6_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, w6_t, SHA512C26);
+  w7_t = SHA512_EXPAND_S (w5_t, w0_t, w8_t, w7_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, w7_t, SHA512C27);
+  w8_t = SHA512_EXPAND_S (w6_t, w1_t, w9_t, w8_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w8_t, SHA512C28);
+  w9_t = SHA512_EXPAND_S (w7_t, w2_t, wa_t, w9_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w9_t, SHA512C29);
+  wa_t = SHA512_EXPAND_S (w8_t, w3_t, wb_t, wa_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, wa_t, SHA512C2a);
+  wb_t = SHA512_EXPAND_S (w9_t, w4_t, wc_t, wb_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, wb_t, SHA512C2b);
+  wc_t = SHA512_EXPAND_S (wa_t, w5_t, wd_t, wc_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, wc_t, SHA512C2c);
+  wd_t = SHA512_EXPAND_S (wb_t, w6_t, we_t, wd_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, wd_t, SHA512C2d);
+  we_t = SHA512_EXPAND_S (wc_t, w7_t, wf_t, we_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, we_t, SHA512C2e);
+  wf_t = SHA512_EXPAND_S (wd_t, w8_t, w0_t, wf_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, wf_t, SHA512C2f);
+  w0_t = SHA512_EXPAND_S (we_t, w9_t, w1_t, w0_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w0_t, SHA512C30);
+  w1_t = SHA512_EXPAND_S (wf_t, wa_t, w2_t, w1_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w1_t, SHA512C31);
+  w2_t = SHA512_EXPAND_S (w0_t, wb_t, w3_t, w2_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, w2_t, SHA512C32);
+  w3_t = SHA512_EXPAND_S (w1_t, wc_t, w4_t, w3_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, w3_t, SHA512C33);
+  w4_t = SHA512_EXPAND_S (w2_t, wd_t, w5_t, w4_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, w4_t, SHA512C34);
+  w5_t = SHA512_EXPAND_S (w3_t, we_t, w6_t, w5_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, w5_t, SHA512C35);
+  w6_t = SHA512_EXPAND_S (w4_t, wf_t, w7_t, w6_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, w6_t, SHA512C36);
+  w7_t = SHA512_EXPAND_S (w5_t, w0_t, w8_t, w7_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, w7_t, SHA512C37);
+  w8_t = SHA512_EXPAND_S (w6_t, w1_t, w9_t, w8_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w8_t, SHA512C38);
+  w9_t = SHA512_EXPAND_S (w7_t, w2_t, wa_t, w9_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w9_t, SHA512C39);
+  wa_t = SHA512_EXPAND_S (w8_t, w3_t, wb_t, wa_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, wa_t, SHA512C3a);
+  wb_t = SHA512_EXPAND_S (w9_t, w4_t, wc_t, wb_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, wb_t, SHA512C3b);
+  wc_t = SHA512_EXPAND_S (wa_t, w5_t, wd_t, wc_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, wc_t, SHA512C3c);
+  wd_t = SHA512_EXPAND_S (wb_t, w6_t, we_t, wd_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, wd_t, SHA512C3d);
+  we_t = SHA512_EXPAND_S (wc_t, w7_t, wf_t, we_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, we_t, SHA512C3e);
+  wf_t = SHA512_EXPAND_S (wd_t, w8_t, w0_t, wf_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, wf_t, SHA512C3f);
+  w0_t = SHA512_EXPAND_S (we_t, w9_t, w1_t, w0_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w0_t, SHA512C40);
+  w1_t = SHA512_EXPAND_S (wf_t, wa_t, w2_t, w1_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w1_t, SHA512C41);
+  w2_t = SHA512_EXPAND_S (w0_t, wb_t, w3_t, w2_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, w2_t, SHA512C42);
+  w3_t = SHA512_EXPAND_S (w1_t, wc_t, w4_t, w3_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, w3_t, SHA512C43);
+  w4_t = SHA512_EXPAND_S (w2_t, wd_t, w5_t, w4_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, w4_t, SHA512C44);
+  w5_t = SHA512_EXPAND_S (w3_t, we_t, w6_t, w5_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, w5_t, SHA512C45);
+  w6_t = SHA512_EXPAND_S (w4_t, wf_t, w7_t, w6_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, w6_t, SHA512C46);
+  w7_t = SHA512_EXPAND_S (w5_t, w0_t, w8_t, w7_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, w7_t, SHA512C47);
+  w8_t = SHA512_EXPAND_S (w6_t, w1_t, w9_t, w8_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w8_t, SHA512C48);
+  w9_t = SHA512_EXPAND_S (w7_t, w2_t, wa_t, w9_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w9_t, SHA512C49);
+  wa_t = SHA512_EXPAND_S (w8_t, w3_t, wb_t, wa_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, wa_t, SHA512C4a);
+  wb_t = SHA512_EXPAND_S (w9_t, w4_t, wc_t, wb_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, wb_t, SHA512C4b);
+  wc_t = SHA512_EXPAND_S (wa_t, w5_t, wd_t, wc_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, wc_t, SHA512C4c);
+  wd_t = SHA512_EXPAND_S (wb_t, w6_t, we_t, wd_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, wd_t, SHA512C4d);
+  we_t = SHA512_EXPAND_S (wc_t, w7_t, wf_t, we_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, we_t, SHA512C4e);
+  wf_t = SHA512_EXPAND_S (wd_t, w8_t, w0_t, wf_t); SHA512_STEP_S (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, wf_t, SHA512C4f);
 
   digest[0] += a;
   digest[1] += b;
@@ -432,6 +514,137 @@ DECLSPEC void sha512_update (PRIVATE_AS sha512_ctx_t *ctx, PRIVATE_AS const u32 
     sha512_update_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, 128);
   }
 
+  const int tail = len - pos1;
+
+  u32 t[32];
+
+  t[ 0] = hc_bounded_word_be_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_be_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_be_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_be_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_be_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_be_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_be_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_be_S (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_be_S (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_be_S (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_be_S (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_be_S (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_be_S (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_be_S (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_be_S (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_be_S (w, pos4 + 15, tail -  60);
+  t[16] = hc_bounded_word_be_S (w, pos4 + 16, tail -  64);
+  t[17] = hc_bounded_word_be_S (w, pos4 + 17, tail -  68);
+  t[18] = hc_bounded_word_be_S (w, pos4 + 18, tail -  72);
+  t[19] = hc_bounded_word_be_S (w, pos4 + 19, tail -  76);
+  t[20] = hc_bounded_word_be_S (w, pos4 + 20, tail -  80);
+  t[21] = hc_bounded_word_be_S (w, pos4 + 21, tail -  84);
+  t[22] = hc_bounded_word_be_S (w, pos4 + 22, tail -  88);
+  t[23] = hc_bounded_word_be_S (w, pos4 + 23, tail -  92);
+  t[24] = hc_bounded_word_be_S (w, pos4 + 24, tail -  96);
+  t[25] = hc_bounded_word_be_S (w, pos4 + 25, tail - 100);
+  t[26] = hc_bounded_word_be_S (w, pos4 + 26, tail - 104);
+  t[27] = hc_bounded_word_be_S (w, pos4 + 27, tail - 108);
+  t[28] = hc_bounded_word_be_S (w, pos4 + 28, tail - 112);
+  t[29] = hc_bounded_word_be_S (w, pos4 + 29, tail - 116);
+  t[30] = hc_bounded_word_be_S (w, pos4 + 30, tail - 120);
+  t[31] = hc_bounded_word_be_S (w, pos4 + 31, tail - 124);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
+  w2[0] = t[ 8];
+  w2[1] = t[ 9];
+  w2[2] = t[10];
+  w2[3] = t[11];
+  w3[0] = t[12];
+  w3[1] = t[13];
+  w3[2] = t[14];
+  w3[3] = t[15];
+  w4[0] = t[16];
+  w4[1] = t[17];
+  w4[2] = t[18];
+  w4[3] = t[19];
+  w5[0] = t[20];
+  w5[1] = t[21];
+  w5[2] = t[22];
+  w5[3] = t[23];
+  w6[0] = t[24];
+  w6[1] = t[25];
+  w6[2] = t[26];
+  w6[3] = t[27];
+  w7[0] = t[28];
+  w7[1] = t[29];
+  w7[2] = t[30];
+  w7[3] = t[31];
+
+  sha512_update_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, len - pos1);
+}
+
+// sha512_update () for a caller whose buffer is zero padded to the end of the 128 byte block that len
+// ends in. Every read is then a plain load. A kernel that passes the same buffer on every round of a
+// loop, such as a salt, or the password of a slow hash, gets those loads out of the loop. The bounded
+// reads of sha512_update () stay inside it, because each one is conditional, and the kernel pays for
+// all of them on every round.
+
+DECLSPEC void sha512_update_padded (PRIVATE_AS sha512_ctx_t *ctx, PRIVATE_AS const u32 *w, const int len)
+{
+  u32 w0[4];
+  u32 w1[4];
+  u32 w2[4];
+  u32 w3[4];
+  u32 w4[4];
+  u32 w5[4];
+  u32 w6[4];
+  u32 w7[4];
+
+  int pos1;
+  int pos4;
+
+  for (pos1 = 0, pos4 = 0; pos1 < len - 128; pos1 += 128, pos4 += 32)
+  {
+    w0[0] = w[pos4 +  0];
+    w0[1] = w[pos4 +  1];
+    w0[2] = w[pos4 +  2];
+    w0[3] = w[pos4 +  3];
+    w1[0] = w[pos4 +  4];
+    w1[1] = w[pos4 +  5];
+    w1[2] = w[pos4 +  6];
+    w1[3] = w[pos4 +  7];
+    w2[0] = w[pos4 +  8];
+    w2[1] = w[pos4 +  9];
+    w2[2] = w[pos4 + 10];
+    w2[3] = w[pos4 + 11];
+    w3[0] = w[pos4 + 12];
+    w3[1] = w[pos4 + 13];
+    w3[2] = w[pos4 + 14];
+    w3[3] = w[pos4 + 15];
+    w4[0] = w[pos4 + 16];
+    w4[1] = w[pos4 + 17];
+    w4[2] = w[pos4 + 18];
+    w4[3] = w[pos4 + 19];
+    w5[0] = w[pos4 + 20];
+    w5[1] = w[pos4 + 21];
+    w5[2] = w[pos4 + 22];
+    w5[3] = w[pos4 + 23];
+    w6[0] = w[pos4 + 24];
+    w6[1] = w[pos4 + 25];
+    w6[2] = w[pos4 + 26];
+    w6[3] = w[pos4 + 27];
+    w7[0] = w[pos4 + 28];
+    w7[1] = w[pos4 + 29];
+    w7[2] = w[pos4 + 30];
+    w7[3] = w[pos4 + 31];
+
+    sha512_update_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, 128);
+  }
+
   w0[0] = w[pos4 +  0];
   w0[1] = w[pos4 +  1];
   w0[2] = w[pos4 +  2];
@@ -553,71 +766,75 @@ DECLSPEC void sha512_update_swap (PRIVATE_AS sha512_ctx_t *ctx, PRIVATE_AS const
     sha512_update_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, 128);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
-  w4[0] = w[pos4 + 16];
-  w4[1] = w[pos4 + 17];
-  w4[2] = w[pos4 + 18];
-  w4[3] = w[pos4 + 19];
-  w5[0] = w[pos4 + 20];
-  w5[1] = w[pos4 + 21];
-  w5[2] = w[pos4 + 22];
-  w5[3] = w[pos4 + 23];
-  w6[0] = w[pos4 + 24];
-  w6[1] = w[pos4 + 25];
-  w6[2] = w[pos4 + 26];
-  w6[3] = w[pos4 + 27];
-  w7[0] = w[pos4 + 28];
-  w7[1] = w[pos4 + 29];
-  w7[2] = w[pos4 + 30];
-  w7[3] = w[pos4 + 31];
+  const int tail = len - pos1;
 
-  w0[0] = hc_swap32_S (w0[0]);
-  w0[1] = hc_swap32_S (w0[1]);
-  w0[2] = hc_swap32_S (w0[2]);
-  w0[3] = hc_swap32_S (w0[3]);
-  w1[0] = hc_swap32_S (w1[0]);
-  w1[1] = hc_swap32_S (w1[1]);
-  w1[2] = hc_swap32_S (w1[2]);
-  w1[3] = hc_swap32_S (w1[3]);
-  w2[0] = hc_swap32_S (w2[0]);
-  w2[1] = hc_swap32_S (w2[1]);
-  w2[2] = hc_swap32_S (w2[2]);
-  w2[3] = hc_swap32_S (w2[3]);
-  w3[0] = hc_swap32_S (w3[0]);
-  w3[1] = hc_swap32_S (w3[1]);
-  w3[2] = hc_swap32_S (w3[2]);
-  w3[3] = hc_swap32_S (w3[3]);
-  w4[0] = hc_swap32_S (w4[0]);
-  w4[1] = hc_swap32_S (w4[1]);
-  w4[2] = hc_swap32_S (w4[2]);
-  w4[3] = hc_swap32_S (w4[3]);
-  w5[0] = hc_swap32_S (w5[0]);
-  w5[1] = hc_swap32_S (w5[1]);
-  w5[2] = hc_swap32_S (w5[2]);
-  w5[3] = hc_swap32_S (w5[3]);
-  w6[0] = hc_swap32_S (w6[0]);
-  w6[1] = hc_swap32_S (w6[1]);
-  w6[2] = hc_swap32_S (w6[2]);
-  w6[3] = hc_swap32_S (w6[3]);
-  w7[0] = hc_swap32_S (w7[0]);
-  w7[1] = hc_swap32_S (w7[1]);
-  w7[2] = hc_swap32_S (w7[2]);
-  w7[3] = hc_swap32_S (w7[3]);
+  u32 t[32];
+
+  t[ 0] = hc_bounded_word_le_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_le_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_le_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_le_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_le_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_le_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_le_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_le_S (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_le_S (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_le_S (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_le_S (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_le_S (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_le_S (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_le_S (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_le_S (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_le_S (w, pos4 + 15, tail -  60);
+  t[16] = hc_bounded_word_le_S (w, pos4 + 16, tail -  64);
+  t[17] = hc_bounded_word_le_S (w, pos4 + 17, tail -  68);
+  t[18] = hc_bounded_word_le_S (w, pos4 + 18, tail -  72);
+  t[19] = hc_bounded_word_le_S (w, pos4 + 19, tail -  76);
+  t[20] = hc_bounded_word_le_S (w, pos4 + 20, tail -  80);
+  t[21] = hc_bounded_word_le_S (w, pos4 + 21, tail -  84);
+  t[22] = hc_bounded_word_le_S (w, pos4 + 22, tail -  88);
+  t[23] = hc_bounded_word_le_S (w, pos4 + 23, tail -  92);
+  t[24] = hc_bounded_word_le_S (w, pos4 + 24, tail -  96);
+  t[25] = hc_bounded_word_le_S (w, pos4 + 25, tail - 100);
+  t[26] = hc_bounded_word_le_S (w, pos4 + 26, tail - 104);
+  t[27] = hc_bounded_word_le_S (w, pos4 + 27, tail - 108);
+  t[28] = hc_bounded_word_le_S (w, pos4 + 28, tail - 112);
+  t[29] = hc_bounded_word_le_S (w, pos4 + 29, tail - 116);
+  t[30] = hc_bounded_word_le_S (w, pos4 + 30, tail - 120);
+  t[31] = hc_bounded_word_le_S (w, pos4 + 31, tail - 124);
+
+  w0[0] = hc_swap32_S (t[ 0]);
+  w0[1] = hc_swap32_S (t[ 1]);
+  w0[2] = hc_swap32_S (t[ 2]);
+  w0[3] = hc_swap32_S (t[ 3]);
+  w1[0] = hc_swap32_S (t[ 4]);
+  w1[1] = hc_swap32_S (t[ 5]);
+  w1[2] = hc_swap32_S (t[ 6]);
+  w1[3] = hc_swap32_S (t[ 7]);
+  w2[0] = hc_swap32_S (t[ 8]);
+  w2[1] = hc_swap32_S (t[ 9]);
+  w2[2] = hc_swap32_S (t[10]);
+  w2[3] = hc_swap32_S (t[11]);
+  w3[0] = hc_swap32_S (t[12]);
+  w3[1] = hc_swap32_S (t[13]);
+  w3[2] = hc_swap32_S (t[14]);
+  w3[3] = hc_swap32_S (t[15]);
+  w4[0] = hc_swap32_S (t[16]);
+  w4[1] = hc_swap32_S (t[17]);
+  w4[2] = hc_swap32_S (t[18]);
+  w4[3] = hc_swap32_S (t[19]);
+  w5[0] = hc_swap32_S (t[20]);
+  w5[1] = hc_swap32_S (t[21]);
+  w5[2] = hc_swap32_S (t[22]);
+  w5[3] = hc_swap32_S (t[23]);
+  w6[0] = hc_swap32_S (t[24]);
+  w6[1] = hc_swap32_S (t[25]);
+  w6[2] = hc_swap32_S (t[26]);
+  w6[3] = hc_swap32_S (t[27]);
+  w7[0] = hc_swap32_S (t[28]);
+  w7[1] = hc_swap32_S (t[29]);
+  w7[2] = hc_swap32_S (t[30]);
+  w7[3] = hc_swap32_S (t[31]);
 
   sha512_update_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, len - pos1);
 }
@@ -688,22 +905,43 @@ DECLSPEC void sha512_update_utf16le (PRIVATE_AS sha512_ctx_t *ctx, PRIVATE_AS co
     sha512_update_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, 64 * 2);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
+  const int tail = len - pos1;
+
+  u32 t[16];
+
+  t[ 0] = hc_bounded_word_be_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_be_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_be_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_be_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_be_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_be_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_be_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_be_S (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_be_S (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_be_S (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_be_S (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_be_S (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_be_S (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_be_S (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_be_S (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_be_S (w, pos4 + 15, tail -  60);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
+  w2[0] = t[ 8];
+  w2[1] = t[ 9];
+  w2[2] = t[10];
+  w2[3] = t[11];
+  w3[0] = t[12];
+  w3[1] = t[13];
+  w3[2] = t[14];
+  w3[3] = t[15];
 
   make_utf16le_S (w3, w6, w7);
   make_utf16le_S (w2, w4, w5);
@@ -845,22 +1083,43 @@ DECLSPEC void sha512_update_utf16le_swap (PRIVATE_AS sha512_ctx_t *ctx, PRIVATE_
     sha512_update_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, 64 * 2);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
+  const int tail = len - pos1;
+
+  u32 t[16];
+
+  t[ 0] = hc_bounded_word_le_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_le_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_le_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_le_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_le_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_le_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_le_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_le_S (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_le_S (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_le_S (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_le_S (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_le_S (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_le_S (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_le_S (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_le_S (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_le_S (w, pos4 + 15, tail -  60);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
+  w2[0] = t[ 8];
+  w2[1] = t[ 9];
+  w2[2] = t[10];
+  w2[3] = t[11];
+  w3[0] = t[12];
+  w3[1] = t[13];
+  w3[2] = t[14];
+  w3[3] = t[15];
 
   make_utf16le_S (w3, w6, w7);
   make_utf16le_S (w2, w4, w5);
@@ -955,38 +1214,75 @@ DECLSPEC void sha512_update_global (PRIVATE_AS sha512_ctx_t *ctx, GLOBAL_AS cons
     sha512_update_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, 128);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
-  w4[0] = w[pos4 + 16];
-  w4[1] = w[pos4 + 17];
-  w4[2] = w[pos4 + 18];
-  w4[3] = w[pos4 + 19];
-  w5[0] = w[pos4 + 20];
-  w5[1] = w[pos4 + 21];
-  w5[2] = w[pos4 + 22];
-  w5[3] = w[pos4 + 23];
-  w6[0] = w[pos4 + 24];
-  w6[1] = w[pos4 + 25];
-  w6[2] = w[pos4 + 26];
-  w6[3] = w[pos4 + 27];
-  w7[0] = w[pos4 + 28];
-  w7[1] = w[pos4 + 29];
-  w7[2] = w[pos4 + 30];
-  w7[3] = w[pos4 + 31];
+  const int tail = len - pos1;
+
+  u32 t[32];
+
+  t[ 0] = hc_bounded_word_global_be_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_global_be_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_global_be_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_global_be_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_global_be_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_global_be_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_global_be_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_global_be_S (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_global_be_S (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_global_be_S (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_global_be_S (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_global_be_S (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_global_be_S (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_global_be_S (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_global_be_S (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_global_be_S (w, pos4 + 15, tail -  60);
+  t[16] = hc_bounded_word_global_be_S (w, pos4 + 16, tail -  64);
+  t[17] = hc_bounded_word_global_be_S (w, pos4 + 17, tail -  68);
+  t[18] = hc_bounded_word_global_be_S (w, pos4 + 18, tail -  72);
+  t[19] = hc_bounded_word_global_be_S (w, pos4 + 19, tail -  76);
+  t[20] = hc_bounded_word_global_be_S (w, pos4 + 20, tail -  80);
+  t[21] = hc_bounded_word_global_be_S (w, pos4 + 21, tail -  84);
+  t[22] = hc_bounded_word_global_be_S (w, pos4 + 22, tail -  88);
+  t[23] = hc_bounded_word_global_be_S (w, pos4 + 23, tail -  92);
+  t[24] = hc_bounded_word_global_be_S (w, pos4 + 24, tail -  96);
+  t[25] = hc_bounded_word_global_be_S (w, pos4 + 25, tail - 100);
+  t[26] = hc_bounded_word_global_be_S (w, pos4 + 26, tail - 104);
+  t[27] = hc_bounded_word_global_be_S (w, pos4 + 27, tail - 108);
+  t[28] = hc_bounded_word_global_be_S (w, pos4 + 28, tail - 112);
+  t[29] = hc_bounded_word_global_be_S (w, pos4 + 29, tail - 116);
+  t[30] = hc_bounded_word_global_be_S (w, pos4 + 30, tail - 120);
+  t[31] = hc_bounded_word_global_be_S (w, pos4 + 31, tail - 124);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
+  w2[0] = t[ 8];
+  w2[1] = t[ 9];
+  w2[2] = t[10];
+  w2[3] = t[11];
+  w3[0] = t[12];
+  w3[1] = t[13];
+  w3[2] = t[14];
+  w3[3] = t[15];
+  w4[0] = t[16];
+  w4[1] = t[17];
+  w4[2] = t[18];
+  w4[3] = t[19];
+  w5[0] = t[20];
+  w5[1] = t[21];
+  w5[2] = t[22];
+  w5[3] = t[23];
+  w6[0] = t[24];
+  w6[1] = t[25];
+  w6[2] = t[26];
+  w6[3] = t[27];
+  w7[0] = t[28];
+  w7[1] = t[29];
+  w7[2] = t[30];
+  w7[3] = t[31];
 
   sha512_update_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, len - pos1);
 }
@@ -1076,71 +1372,75 @@ DECLSPEC void sha512_update_global_swap (PRIVATE_AS sha512_ctx_t *ctx, GLOBAL_AS
     sha512_update_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, 128);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
-  w4[0] = w[pos4 + 16];
-  w4[1] = w[pos4 + 17];
-  w4[2] = w[pos4 + 18];
-  w4[3] = w[pos4 + 19];
-  w5[0] = w[pos4 + 20];
-  w5[1] = w[pos4 + 21];
-  w5[2] = w[pos4 + 22];
-  w5[3] = w[pos4 + 23];
-  w6[0] = w[pos4 + 24];
-  w6[1] = w[pos4 + 25];
-  w6[2] = w[pos4 + 26];
-  w6[3] = w[pos4 + 27];
-  w7[0] = w[pos4 + 28];
-  w7[1] = w[pos4 + 29];
-  w7[2] = w[pos4 + 30];
-  w7[3] = w[pos4 + 31];
+  const int tail = len - pos1;
 
-  w0[0] = hc_swap32_S (w0[0]);
-  w0[1] = hc_swap32_S (w0[1]);
-  w0[2] = hc_swap32_S (w0[2]);
-  w0[3] = hc_swap32_S (w0[3]);
-  w1[0] = hc_swap32_S (w1[0]);
-  w1[1] = hc_swap32_S (w1[1]);
-  w1[2] = hc_swap32_S (w1[2]);
-  w1[3] = hc_swap32_S (w1[3]);
-  w2[0] = hc_swap32_S (w2[0]);
-  w2[1] = hc_swap32_S (w2[1]);
-  w2[2] = hc_swap32_S (w2[2]);
-  w2[3] = hc_swap32_S (w2[3]);
-  w3[0] = hc_swap32_S (w3[0]);
-  w3[1] = hc_swap32_S (w3[1]);
-  w3[2] = hc_swap32_S (w3[2]);
-  w3[3] = hc_swap32_S (w3[3]);
-  w4[0] = hc_swap32_S (w4[0]);
-  w4[1] = hc_swap32_S (w4[1]);
-  w4[2] = hc_swap32_S (w4[2]);
-  w4[3] = hc_swap32_S (w4[3]);
-  w5[0] = hc_swap32_S (w5[0]);
-  w5[1] = hc_swap32_S (w5[1]);
-  w5[2] = hc_swap32_S (w5[2]);
-  w5[3] = hc_swap32_S (w5[3]);
-  w6[0] = hc_swap32_S (w6[0]);
-  w6[1] = hc_swap32_S (w6[1]);
-  w6[2] = hc_swap32_S (w6[2]);
-  w6[3] = hc_swap32_S (w6[3]);
-  w7[0] = hc_swap32_S (w7[0]);
-  w7[1] = hc_swap32_S (w7[1]);
-  w7[2] = hc_swap32_S (w7[2]);
-  w7[3] = hc_swap32_S (w7[3]);
+  u32 t[32];
+
+  t[ 0] = hc_bounded_word_global_le_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_global_le_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_global_le_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_global_le_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_global_le_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_global_le_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_global_le_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_global_le_S (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_global_le_S (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_global_le_S (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_global_le_S (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_global_le_S (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_global_le_S (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_global_le_S (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_global_le_S (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_global_le_S (w, pos4 + 15, tail -  60);
+  t[16] = hc_bounded_word_global_le_S (w, pos4 + 16, tail -  64);
+  t[17] = hc_bounded_word_global_le_S (w, pos4 + 17, tail -  68);
+  t[18] = hc_bounded_word_global_le_S (w, pos4 + 18, tail -  72);
+  t[19] = hc_bounded_word_global_le_S (w, pos4 + 19, tail -  76);
+  t[20] = hc_bounded_word_global_le_S (w, pos4 + 20, tail -  80);
+  t[21] = hc_bounded_word_global_le_S (w, pos4 + 21, tail -  84);
+  t[22] = hc_bounded_word_global_le_S (w, pos4 + 22, tail -  88);
+  t[23] = hc_bounded_word_global_le_S (w, pos4 + 23, tail -  92);
+  t[24] = hc_bounded_word_global_le_S (w, pos4 + 24, tail -  96);
+  t[25] = hc_bounded_word_global_le_S (w, pos4 + 25, tail - 100);
+  t[26] = hc_bounded_word_global_le_S (w, pos4 + 26, tail - 104);
+  t[27] = hc_bounded_word_global_le_S (w, pos4 + 27, tail - 108);
+  t[28] = hc_bounded_word_global_le_S (w, pos4 + 28, tail - 112);
+  t[29] = hc_bounded_word_global_le_S (w, pos4 + 29, tail - 116);
+  t[30] = hc_bounded_word_global_le_S (w, pos4 + 30, tail - 120);
+  t[31] = hc_bounded_word_global_le_S (w, pos4 + 31, tail - 124);
+
+  w0[0] = hc_swap32_S (t[ 0]);
+  w0[1] = hc_swap32_S (t[ 1]);
+  w0[2] = hc_swap32_S (t[ 2]);
+  w0[3] = hc_swap32_S (t[ 3]);
+  w1[0] = hc_swap32_S (t[ 4]);
+  w1[1] = hc_swap32_S (t[ 5]);
+  w1[2] = hc_swap32_S (t[ 6]);
+  w1[3] = hc_swap32_S (t[ 7]);
+  w2[0] = hc_swap32_S (t[ 8]);
+  w2[1] = hc_swap32_S (t[ 9]);
+  w2[2] = hc_swap32_S (t[10]);
+  w2[3] = hc_swap32_S (t[11]);
+  w3[0] = hc_swap32_S (t[12]);
+  w3[1] = hc_swap32_S (t[13]);
+  w3[2] = hc_swap32_S (t[14]);
+  w3[3] = hc_swap32_S (t[15]);
+  w4[0] = hc_swap32_S (t[16]);
+  w4[1] = hc_swap32_S (t[17]);
+  w4[2] = hc_swap32_S (t[18]);
+  w4[3] = hc_swap32_S (t[19]);
+  w5[0] = hc_swap32_S (t[20]);
+  w5[1] = hc_swap32_S (t[21]);
+  w5[2] = hc_swap32_S (t[22]);
+  w5[3] = hc_swap32_S (t[23]);
+  w6[0] = hc_swap32_S (t[24]);
+  w6[1] = hc_swap32_S (t[25]);
+  w6[2] = hc_swap32_S (t[26]);
+  w6[3] = hc_swap32_S (t[27]);
+  w7[0] = hc_swap32_S (t[28]);
+  w7[1] = hc_swap32_S (t[29]);
+  w7[2] = hc_swap32_S (t[30]);
+  w7[3] = hc_swap32_S (t[31]);
 
   sha512_update_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, len - pos1);
 }
@@ -1211,22 +1511,43 @@ DECLSPEC void sha512_update_global_utf16le (PRIVATE_AS sha512_ctx_t *ctx, GLOBAL
     sha512_update_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, 64 * 2);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
+  const int tail = len - pos1;
+
+  u32 t[16];
+
+  t[ 0] = hc_bounded_word_global_be_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_global_be_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_global_be_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_global_be_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_global_be_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_global_be_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_global_be_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_global_be_S (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_global_be_S (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_global_be_S (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_global_be_S (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_global_be_S (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_global_be_S (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_global_be_S (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_global_be_S (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_global_be_S (w, pos4 + 15, tail -  60);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
+  w2[0] = t[ 8];
+  w2[1] = t[ 9];
+  w2[2] = t[10];
+  w2[3] = t[11];
+  w3[0] = t[12];
+  w3[1] = t[13];
+  w3[2] = t[14];
+  w3[3] = t[15];
 
   make_utf16le_S (w3, w6, w7);
   make_utf16le_S (w2, w4, w5);
@@ -1368,22 +1689,43 @@ DECLSPEC void sha512_update_global_utf16le_swap (PRIVATE_AS sha512_ctx_t *ctx, G
     sha512_update_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, 64 * 2);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
+  const int tail = len - pos1;
+
+  u32 t[16];
+
+  t[ 0] = hc_bounded_word_global_le_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_global_le_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_global_le_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_global_le_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_global_le_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_global_le_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_global_le_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_global_le_S (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_global_le_S (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_global_le_S (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_global_le_S (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_global_le_S (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_global_le_S (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_global_le_S (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_global_le_S (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_global_le_S (w, pos4 + 15, tail -  60);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
+  w2[0] = t[ 8];
+  w2[1] = t[ 9];
+  w2[2] = t[10];
+  w2[3] = t[11];
+  w3[0] = t[12];
+  w3[1] = t[13];
+  w3[2] = t[14];
+  w3[3] = t[15];
 
   make_utf16le_S (w3, w6, w7);
   make_utf16le_S (w2, w4, w5);
@@ -1633,38 +1975,75 @@ DECLSPEC void sha512_hmac_init (PRIVATE_AS sha512_hmac_ctx_t *ctx, PRIVATE_AS co
   }
   else
   {
-    w0[0] = w[ 0];
-    w0[1] = w[ 1];
-    w0[2] = w[ 2];
-    w0[3] = w[ 3];
-    w1[0] = w[ 4];
-    w1[1] = w[ 5];
-    w1[2] = w[ 6];
-    w1[3] = w[ 7];
-    w2[0] = w[ 8];
-    w2[1] = w[ 9];
-    w2[2] = w[10];
-    w2[3] = w[11];
-    w3[0] = w[12];
-    w3[1] = w[13];
-    w3[2] = w[14];
-    w3[3] = w[15];
-    w4[0] = w[16];
-    w4[1] = w[17];
-    w4[2] = w[18];
-    w4[3] = w[19];
-    w5[0] = w[20];
-    w5[1] = w[21];
-    w5[2] = w[22];
-    w5[3] = w[23];
-    w6[0] = w[24];
-    w6[1] = w[25];
-    w6[2] = w[26];
-    w6[3] = w[27];
-    w7[0] = w[28];
-    w7[1] = w[29];
-    w7[2] = w[30];
-    w7[3] = w[31];
+    const int tail = len;
+
+    u32 t[32];
+
+    t[ 0] = hc_bounded_word_be_S (w,  0, tail -   0);
+    t[ 1] = hc_bounded_word_be_S (w,  1, tail -   4);
+    t[ 2] = hc_bounded_word_be_S (w,  2, tail -   8);
+    t[ 3] = hc_bounded_word_be_S (w,  3, tail -  12);
+    t[ 4] = hc_bounded_word_be_S (w,  4, tail -  16);
+    t[ 5] = hc_bounded_word_be_S (w,  5, tail -  20);
+    t[ 6] = hc_bounded_word_be_S (w,  6, tail -  24);
+    t[ 7] = hc_bounded_word_be_S (w,  7, tail -  28);
+    t[ 8] = hc_bounded_word_be_S (w,  8, tail -  32);
+    t[ 9] = hc_bounded_word_be_S (w,  9, tail -  36);
+    t[10] = hc_bounded_word_be_S (w, 10, tail -  40);
+    t[11] = hc_bounded_word_be_S (w, 11, tail -  44);
+    t[12] = hc_bounded_word_be_S (w, 12, tail -  48);
+    t[13] = hc_bounded_word_be_S (w, 13, tail -  52);
+    t[14] = hc_bounded_word_be_S (w, 14, tail -  56);
+    t[15] = hc_bounded_word_be_S (w, 15, tail -  60);
+    t[16] = hc_bounded_word_be_S (w, 16, tail -  64);
+    t[17] = hc_bounded_word_be_S (w, 17, tail -  68);
+    t[18] = hc_bounded_word_be_S (w, 18, tail -  72);
+    t[19] = hc_bounded_word_be_S (w, 19, tail -  76);
+    t[20] = hc_bounded_word_be_S (w, 20, tail -  80);
+    t[21] = hc_bounded_word_be_S (w, 21, tail -  84);
+    t[22] = hc_bounded_word_be_S (w, 22, tail -  88);
+    t[23] = hc_bounded_word_be_S (w, 23, tail -  92);
+    t[24] = hc_bounded_word_be_S (w, 24, tail -  96);
+    t[25] = hc_bounded_word_be_S (w, 25, tail - 100);
+    t[26] = hc_bounded_word_be_S (w, 26, tail - 104);
+    t[27] = hc_bounded_word_be_S (w, 27, tail - 108);
+    t[28] = hc_bounded_word_be_S (w, 28, tail - 112);
+    t[29] = hc_bounded_word_be_S (w, 29, tail - 116);
+    t[30] = hc_bounded_word_be_S (w, 30, tail - 120);
+    t[31] = hc_bounded_word_be_S (w, 31, tail - 124);
+
+    w0[0] = t[ 0];
+    w0[1] = t[ 1];
+    w0[2] = t[ 2];
+    w0[3] = t[ 3];
+    w1[0] = t[ 4];
+    w1[1] = t[ 5];
+    w1[2] = t[ 6];
+    w1[3] = t[ 7];
+    w2[0] = t[ 8];
+    w2[1] = t[ 9];
+    w2[2] = t[10];
+    w2[3] = t[11];
+    w3[0] = t[12];
+    w3[1] = t[13];
+    w3[2] = t[14];
+    w3[3] = t[15];
+    w4[0] = t[16];
+    w4[1] = t[17];
+    w4[2] = t[18];
+    w4[3] = t[19];
+    w5[0] = t[20];
+    w5[1] = t[21];
+    w5[2] = t[22];
+    w5[3] = t[23];
+    w6[0] = t[24];
+    w6[1] = t[25];
+    w6[2] = t[26];
+    w6[3] = t[27];
+    w7[0] = t[28];
+    w7[1] = t[29];
+    w7[2] = t[30];
+    w7[3] = t[31];
   }
 
   sha512_hmac_init_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7);
@@ -1726,38 +2105,75 @@ DECLSPEC void sha512_hmac_init_swap (PRIVATE_AS sha512_hmac_ctx_t *ctx, PRIVATE_
   }
   else
   {
-    w0[0] = hc_swap32_S (w[ 0]);
-    w0[1] = hc_swap32_S (w[ 1]);
-    w0[2] = hc_swap32_S (w[ 2]);
-    w0[3] = hc_swap32_S (w[ 3]);
-    w1[0] = hc_swap32_S (w[ 4]);
-    w1[1] = hc_swap32_S (w[ 5]);
-    w1[2] = hc_swap32_S (w[ 6]);
-    w1[3] = hc_swap32_S (w[ 7]);
-    w2[0] = hc_swap32_S (w[ 8]);
-    w2[1] = hc_swap32_S (w[ 9]);
-    w2[2] = hc_swap32_S (w[10]);
-    w2[3] = hc_swap32_S (w[11]);
-    w3[0] = hc_swap32_S (w[12]);
-    w3[1] = hc_swap32_S (w[13]);
-    w3[2] = hc_swap32_S (w[14]);
-    w3[3] = hc_swap32_S (w[15]);
-    w4[0] = hc_swap32_S (w[16]);
-    w4[1] = hc_swap32_S (w[17]);
-    w4[2] = hc_swap32_S (w[18]);
-    w4[3] = hc_swap32_S (w[19]);
-    w5[0] = hc_swap32_S (w[20]);
-    w5[1] = hc_swap32_S (w[21]);
-    w5[2] = hc_swap32_S (w[22]);
-    w5[3] = hc_swap32_S (w[23]);
-    w6[0] = hc_swap32_S (w[24]);
-    w6[1] = hc_swap32_S (w[25]);
-    w6[2] = hc_swap32_S (w[26]);
-    w6[3] = hc_swap32_S (w[27]);
-    w7[0] = hc_swap32_S (w[28]);
-    w7[1] = hc_swap32_S (w[29]);
-    w7[2] = hc_swap32_S (w[30]);
-    w7[3] = hc_swap32_S (w[31]);
+    const int tail = len;
+
+    u32 t[32];
+
+    t[ 0] = hc_bounded_word_le_S (w,  0, tail -   0);
+    t[ 1] = hc_bounded_word_le_S (w,  1, tail -   4);
+    t[ 2] = hc_bounded_word_le_S (w,  2, tail -   8);
+    t[ 3] = hc_bounded_word_le_S (w,  3, tail -  12);
+    t[ 4] = hc_bounded_word_le_S (w,  4, tail -  16);
+    t[ 5] = hc_bounded_word_le_S (w,  5, tail -  20);
+    t[ 6] = hc_bounded_word_le_S (w,  6, tail -  24);
+    t[ 7] = hc_bounded_word_le_S (w,  7, tail -  28);
+    t[ 8] = hc_bounded_word_le_S (w,  8, tail -  32);
+    t[ 9] = hc_bounded_word_le_S (w,  9, tail -  36);
+    t[10] = hc_bounded_word_le_S (w, 10, tail -  40);
+    t[11] = hc_bounded_word_le_S (w, 11, tail -  44);
+    t[12] = hc_bounded_word_le_S (w, 12, tail -  48);
+    t[13] = hc_bounded_word_le_S (w, 13, tail -  52);
+    t[14] = hc_bounded_word_le_S (w, 14, tail -  56);
+    t[15] = hc_bounded_word_le_S (w, 15, tail -  60);
+    t[16] = hc_bounded_word_le_S (w, 16, tail -  64);
+    t[17] = hc_bounded_word_le_S (w, 17, tail -  68);
+    t[18] = hc_bounded_word_le_S (w, 18, tail -  72);
+    t[19] = hc_bounded_word_le_S (w, 19, tail -  76);
+    t[20] = hc_bounded_word_le_S (w, 20, tail -  80);
+    t[21] = hc_bounded_word_le_S (w, 21, tail -  84);
+    t[22] = hc_bounded_word_le_S (w, 22, tail -  88);
+    t[23] = hc_bounded_word_le_S (w, 23, tail -  92);
+    t[24] = hc_bounded_word_le_S (w, 24, tail -  96);
+    t[25] = hc_bounded_word_le_S (w, 25, tail - 100);
+    t[26] = hc_bounded_word_le_S (w, 26, tail - 104);
+    t[27] = hc_bounded_word_le_S (w, 27, tail - 108);
+    t[28] = hc_bounded_word_le_S (w, 28, tail - 112);
+    t[29] = hc_bounded_word_le_S (w, 29, tail - 116);
+    t[30] = hc_bounded_word_le_S (w, 30, tail - 120);
+    t[31] = hc_bounded_word_le_S (w, 31, tail - 124);
+
+    w0[0] = hc_swap32_S (t[ 0]);
+    w0[1] = hc_swap32_S (t[ 1]);
+    w0[2] = hc_swap32_S (t[ 2]);
+    w0[3] = hc_swap32_S (t[ 3]);
+    w1[0] = hc_swap32_S (t[ 4]);
+    w1[1] = hc_swap32_S (t[ 5]);
+    w1[2] = hc_swap32_S (t[ 6]);
+    w1[3] = hc_swap32_S (t[ 7]);
+    w2[0] = hc_swap32_S (t[ 8]);
+    w2[1] = hc_swap32_S (t[ 9]);
+    w2[2] = hc_swap32_S (t[10]);
+    w2[3] = hc_swap32_S (t[11]);
+    w3[0] = hc_swap32_S (t[12]);
+    w3[1] = hc_swap32_S (t[13]);
+    w3[2] = hc_swap32_S (t[14]);
+    w3[3] = hc_swap32_S (t[15]);
+    w4[0] = hc_swap32_S (t[16]);
+    w4[1] = hc_swap32_S (t[17]);
+    w4[2] = hc_swap32_S (t[18]);
+    w4[3] = hc_swap32_S (t[19]);
+    w5[0] = hc_swap32_S (t[20]);
+    w5[1] = hc_swap32_S (t[21]);
+    w5[2] = hc_swap32_S (t[22]);
+    w5[3] = hc_swap32_S (t[23]);
+    w6[0] = hc_swap32_S (t[24]);
+    w6[1] = hc_swap32_S (t[25]);
+    w6[2] = hc_swap32_S (t[26]);
+    w6[3] = hc_swap32_S (t[27]);
+    w7[0] = hc_swap32_S (t[28]);
+    w7[1] = hc_swap32_S (t[29]);
+    w7[2] = hc_swap32_S (t[30]);
+    w7[3] = hc_swap32_S (t[31]);
   }
 
   sha512_hmac_init_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7);
@@ -1819,44 +2235,89 @@ DECLSPEC void sha512_hmac_init_global (PRIVATE_AS sha512_hmac_ctx_t *ctx, GLOBAL
   }
   else
   {
-    w0[0] = w[ 0];
-    w0[1] = w[ 1];
-    w0[2] = w[ 2];
-    w0[3] = w[ 3];
-    w1[0] = w[ 4];
-    w1[1] = w[ 5];
-    w1[2] = w[ 6];
-    w1[3] = w[ 7];
-    w2[0] = w[ 8];
-    w2[1] = w[ 9];
-    w2[2] = w[10];
-    w2[3] = w[11];
-    w3[0] = w[12];
-    w3[1] = w[13];
-    w3[2] = w[14];
-    w3[3] = w[15];
-    w4[0] = w[16];
-    w4[1] = w[17];
-    w4[2] = w[18];
-    w4[3] = w[19];
-    w5[0] = w[20];
-    w5[1] = w[21];
-    w5[2] = w[22];
-    w5[3] = w[23];
-    w6[0] = w[24];
-    w6[1] = w[25];
-    w6[2] = w[26];
-    w6[3] = w[27];
-    w7[0] = w[28];
-    w7[1] = w[29];
-    w7[2] = w[30];
-    w7[3] = w[31];
+    const int tail = len;
+
+    u32 t[32];
+
+    t[ 0] = hc_bounded_word_global_be_S (w,  0, tail -   0);
+    t[ 1] = hc_bounded_word_global_be_S (w,  1, tail -   4);
+    t[ 2] = hc_bounded_word_global_be_S (w,  2, tail -   8);
+    t[ 3] = hc_bounded_word_global_be_S (w,  3, tail -  12);
+    t[ 4] = hc_bounded_word_global_be_S (w,  4, tail -  16);
+    t[ 5] = hc_bounded_word_global_be_S (w,  5, tail -  20);
+    t[ 6] = hc_bounded_word_global_be_S (w,  6, tail -  24);
+    t[ 7] = hc_bounded_word_global_be_S (w,  7, tail -  28);
+    t[ 8] = hc_bounded_word_global_be_S (w,  8, tail -  32);
+    t[ 9] = hc_bounded_word_global_be_S (w,  9, tail -  36);
+    t[10] = hc_bounded_word_global_be_S (w, 10, tail -  40);
+    t[11] = hc_bounded_word_global_be_S (w, 11, tail -  44);
+    t[12] = hc_bounded_word_global_be_S (w, 12, tail -  48);
+    t[13] = hc_bounded_word_global_be_S (w, 13, tail -  52);
+    t[14] = hc_bounded_word_global_be_S (w, 14, tail -  56);
+    t[15] = hc_bounded_word_global_be_S (w, 15, tail -  60);
+    t[16] = hc_bounded_word_global_be_S (w, 16, tail -  64);
+    t[17] = hc_bounded_word_global_be_S (w, 17, tail -  68);
+    t[18] = hc_bounded_word_global_be_S (w, 18, tail -  72);
+    t[19] = hc_bounded_word_global_be_S (w, 19, tail -  76);
+    t[20] = hc_bounded_word_global_be_S (w, 20, tail -  80);
+    t[21] = hc_bounded_word_global_be_S (w, 21, tail -  84);
+    t[22] = hc_bounded_word_global_be_S (w, 22, tail -  88);
+    t[23] = hc_bounded_word_global_be_S (w, 23, tail -  92);
+    t[24] = hc_bounded_word_global_be_S (w, 24, tail -  96);
+    t[25] = hc_bounded_word_global_be_S (w, 25, tail - 100);
+    t[26] = hc_bounded_word_global_be_S (w, 26, tail - 104);
+    t[27] = hc_bounded_word_global_be_S (w, 27, tail - 108);
+    t[28] = hc_bounded_word_global_be_S (w, 28, tail - 112);
+    t[29] = hc_bounded_word_global_be_S (w, 29, tail - 116);
+    t[30] = hc_bounded_word_global_be_S (w, 30, tail - 120);
+    t[31] = hc_bounded_word_global_be_S (w, 31, tail - 124);
+
+    w0[0] = t[ 0];
+    w0[1] = t[ 1];
+    w0[2] = t[ 2];
+    w0[3] = t[ 3];
+    w1[0] = t[ 4];
+    w1[1] = t[ 5];
+    w1[2] = t[ 6];
+    w1[3] = t[ 7];
+    w2[0] = t[ 8];
+    w2[1] = t[ 9];
+    w2[2] = t[10];
+    w2[3] = t[11];
+    w3[0] = t[12];
+    w3[1] = t[13];
+    w3[2] = t[14];
+    w3[3] = t[15];
+    w4[0] = t[16];
+    w4[1] = t[17];
+    w4[2] = t[18];
+    w4[3] = t[19];
+    w5[0] = t[20];
+    w5[1] = t[21];
+    w5[2] = t[22];
+    w5[3] = t[23];
+    w6[0] = t[24];
+    w6[1] = t[25];
+    w6[2] = t[26];
+    w6[3] = t[27];
+    w7[0] = t[28];
+    w7[1] = t[29];
+    w7[2] = t[30];
+    w7[3] = t[31];
   }
 
   sha512_hmac_init_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7);
 }
 
-DECLSPEC void sha512_hmac_init_global_swap (PRIVATE_AS sha512_hmac_ctx_t *ctx, GLOBAL_AS const u32 *w, const int len)
+// HC_NOINLINE_ALWAYS: both branches are large. The len > 128 branch inlines a whole sha512 pass
+// (init, sha512_update_global_swap (), final), the other one expands to 32 bounded global reads
+// plus swaps, and both end in sha512_hmac_init_128 () with its two sha512_transform () calls.
+// Inlined into an init kernel that already carries its own update/final transforms, this one
+// function is what pushes the AMDGPU back end (ROCm 7, gfx1103) past what it can finish: -m 44500
+// did not compile in 15 minutes, with this attribute the same kernel builds in under a minute.
+// The helper runs once per candidate in the init kernel, so the call is free by comparison.
+
+DECLSPEC HC_NOINLINE_ALWAYS void sha512_hmac_init_global_swap (PRIVATE_AS sha512_hmac_ctx_t *ctx, GLOBAL_AS const u32 *w, const int len)
 {
   u32 w0[4];
   u32 w1[4];
@@ -1912,38 +2373,75 @@ DECLSPEC void sha512_hmac_init_global_swap (PRIVATE_AS sha512_hmac_ctx_t *ctx, G
   }
   else
   {
-    w0[0] = hc_swap32_S (w[ 0]);
-    w0[1] = hc_swap32_S (w[ 1]);
-    w0[2] = hc_swap32_S (w[ 2]);
-    w0[3] = hc_swap32_S (w[ 3]);
-    w1[0] = hc_swap32_S (w[ 4]);
-    w1[1] = hc_swap32_S (w[ 5]);
-    w1[2] = hc_swap32_S (w[ 6]);
-    w1[3] = hc_swap32_S (w[ 7]);
-    w2[0] = hc_swap32_S (w[ 8]);
-    w2[1] = hc_swap32_S (w[ 9]);
-    w2[2] = hc_swap32_S (w[10]);
-    w2[3] = hc_swap32_S (w[11]);
-    w3[0] = hc_swap32_S (w[12]);
-    w3[1] = hc_swap32_S (w[13]);
-    w3[2] = hc_swap32_S (w[14]);
-    w3[3] = hc_swap32_S (w[15]);
-    w4[0] = hc_swap32_S (w[16]);
-    w4[1] = hc_swap32_S (w[17]);
-    w4[2] = hc_swap32_S (w[18]);
-    w4[3] = hc_swap32_S (w[19]);
-    w5[0] = hc_swap32_S (w[20]);
-    w5[1] = hc_swap32_S (w[21]);
-    w5[2] = hc_swap32_S (w[22]);
-    w5[3] = hc_swap32_S (w[23]);
-    w6[0] = hc_swap32_S (w[24]);
-    w6[1] = hc_swap32_S (w[25]);
-    w6[2] = hc_swap32_S (w[26]);
-    w6[3] = hc_swap32_S (w[27]);
-    w7[0] = hc_swap32_S (w[28]);
-    w7[1] = hc_swap32_S (w[29]);
-    w7[2] = hc_swap32_S (w[30]);
-    w7[3] = hc_swap32_S (w[31]);
+    const int tail = len;
+
+    u32 t[32];
+
+    t[ 0] = hc_bounded_word_global_le_S (w,  0, tail -   0);
+    t[ 1] = hc_bounded_word_global_le_S (w,  1, tail -   4);
+    t[ 2] = hc_bounded_word_global_le_S (w,  2, tail -   8);
+    t[ 3] = hc_bounded_word_global_le_S (w,  3, tail -  12);
+    t[ 4] = hc_bounded_word_global_le_S (w,  4, tail -  16);
+    t[ 5] = hc_bounded_word_global_le_S (w,  5, tail -  20);
+    t[ 6] = hc_bounded_word_global_le_S (w,  6, tail -  24);
+    t[ 7] = hc_bounded_word_global_le_S (w,  7, tail -  28);
+    t[ 8] = hc_bounded_word_global_le_S (w,  8, tail -  32);
+    t[ 9] = hc_bounded_word_global_le_S (w,  9, tail -  36);
+    t[10] = hc_bounded_word_global_le_S (w, 10, tail -  40);
+    t[11] = hc_bounded_word_global_le_S (w, 11, tail -  44);
+    t[12] = hc_bounded_word_global_le_S (w, 12, tail -  48);
+    t[13] = hc_bounded_word_global_le_S (w, 13, tail -  52);
+    t[14] = hc_bounded_word_global_le_S (w, 14, tail -  56);
+    t[15] = hc_bounded_word_global_le_S (w, 15, tail -  60);
+    t[16] = hc_bounded_word_global_le_S (w, 16, tail -  64);
+    t[17] = hc_bounded_word_global_le_S (w, 17, tail -  68);
+    t[18] = hc_bounded_word_global_le_S (w, 18, tail -  72);
+    t[19] = hc_bounded_word_global_le_S (w, 19, tail -  76);
+    t[20] = hc_bounded_word_global_le_S (w, 20, tail -  80);
+    t[21] = hc_bounded_word_global_le_S (w, 21, tail -  84);
+    t[22] = hc_bounded_word_global_le_S (w, 22, tail -  88);
+    t[23] = hc_bounded_word_global_le_S (w, 23, tail -  92);
+    t[24] = hc_bounded_word_global_le_S (w, 24, tail -  96);
+    t[25] = hc_bounded_word_global_le_S (w, 25, tail - 100);
+    t[26] = hc_bounded_word_global_le_S (w, 26, tail - 104);
+    t[27] = hc_bounded_word_global_le_S (w, 27, tail - 108);
+    t[28] = hc_bounded_word_global_le_S (w, 28, tail - 112);
+    t[29] = hc_bounded_word_global_le_S (w, 29, tail - 116);
+    t[30] = hc_bounded_word_global_le_S (w, 30, tail - 120);
+    t[31] = hc_bounded_word_global_le_S (w, 31, tail - 124);
+
+    w0[0] = hc_swap32_S (t[ 0]);
+    w0[1] = hc_swap32_S (t[ 1]);
+    w0[2] = hc_swap32_S (t[ 2]);
+    w0[3] = hc_swap32_S (t[ 3]);
+    w1[0] = hc_swap32_S (t[ 4]);
+    w1[1] = hc_swap32_S (t[ 5]);
+    w1[2] = hc_swap32_S (t[ 6]);
+    w1[3] = hc_swap32_S (t[ 7]);
+    w2[0] = hc_swap32_S (t[ 8]);
+    w2[1] = hc_swap32_S (t[ 9]);
+    w2[2] = hc_swap32_S (t[10]);
+    w2[3] = hc_swap32_S (t[11]);
+    w3[0] = hc_swap32_S (t[12]);
+    w3[1] = hc_swap32_S (t[13]);
+    w3[2] = hc_swap32_S (t[14]);
+    w3[3] = hc_swap32_S (t[15]);
+    w4[0] = hc_swap32_S (t[16]);
+    w4[1] = hc_swap32_S (t[17]);
+    w4[2] = hc_swap32_S (t[18]);
+    w4[3] = hc_swap32_S (t[19]);
+    w5[0] = hc_swap32_S (t[20]);
+    w5[1] = hc_swap32_S (t[21]);
+    w5[2] = hc_swap32_S (t[22]);
+    w5[3] = hc_swap32_S (t[23]);
+    w6[0] = hc_swap32_S (t[24]);
+    w6[1] = hc_swap32_S (t[25]);
+    w6[2] = hc_swap32_S (t[26]);
+    w6[3] = hc_swap32_S (t[27]);
+    w7[0] = hc_swap32_S (t[28]);
+    w7[1] = hc_swap32_S (t[29]);
+    w7[2] = hc_swap32_S (t[30]);
+    w7[3] = hc_swap32_S (t[31]);
   }
 
   sha512_hmac_init_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7);
@@ -1961,7 +2459,7 @@ DECLSPEC void sha512_hmac_init_global_utf16le_swap (PRIVATE_AS sha512_hmac_ctx_t
     {
       // forced full decode in one round
 
-      u32 enc_buf[256];
+      u32 enc_buf[256] = { 0 };
 
       const int enc_len = hc_enc_next_global (&hc_enc, w, len, 256, enc_buf, sizeof (enc_buf));
 
@@ -1979,7 +2477,7 @@ DECLSPEC void sha512_hmac_init_global_utf16le_swap (PRIVATE_AS sha512_hmac_ctx_t
 
         sha512_init (&tmp);
 
-        sha512_update_utf16le_swap (&tmp, enc_buf, enc_len);
+        sha512_update_swap (&tmp, enc_buf, enc_len);
 
         sha512_final (&tmp);
 
@@ -2114,22 +2612,43 @@ DECLSPEC void sha512_hmac_init_global_utf16le_swap (PRIVATE_AS sha512_hmac_ctx_t
   }
   else
   {
-    w0[0] = w[ 0];
-    w0[1] = w[ 1];
-    w0[2] = w[ 2];
-    w0[3] = w[ 3];
-    w1[0] = w[ 4];
-    w1[1] = w[ 5];
-    w1[2] = w[ 6];
-    w1[3] = w[ 7];
-    w2[0] = w[ 8];
-    w2[1] = w[ 9];
-    w2[2] = w[10];
-    w2[3] = w[11];
-    w3[0] = w[12];
-    w3[1] = w[13];
-    w3[2] = w[14];
-    w3[3] = w[15];
+    const int tail = len;
+
+    u32 t[16];
+
+    t[ 0] = hc_bounded_word_global_le_S (w,  0, tail -   0);
+    t[ 1] = hc_bounded_word_global_le_S (w,  1, tail -   4);
+    t[ 2] = hc_bounded_word_global_le_S (w,  2, tail -   8);
+    t[ 3] = hc_bounded_word_global_le_S (w,  3, tail -  12);
+    t[ 4] = hc_bounded_word_global_le_S (w,  4, tail -  16);
+    t[ 5] = hc_bounded_word_global_le_S (w,  5, tail -  20);
+    t[ 6] = hc_bounded_word_global_le_S (w,  6, tail -  24);
+    t[ 7] = hc_bounded_word_global_le_S (w,  7, tail -  28);
+    t[ 8] = hc_bounded_word_global_le_S (w,  8, tail -  32);
+    t[ 9] = hc_bounded_word_global_le_S (w,  9, tail -  36);
+    t[10] = hc_bounded_word_global_le_S (w, 10, tail -  40);
+    t[11] = hc_bounded_word_global_le_S (w, 11, tail -  44);
+    t[12] = hc_bounded_word_global_le_S (w, 12, tail -  48);
+    t[13] = hc_bounded_word_global_le_S (w, 13, tail -  52);
+    t[14] = hc_bounded_word_global_le_S (w, 14, tail -  56);
+    t[15] = hc_bounded_word_global_le_S (w, 15, tail -  60);
+
+    w0[0] = t[ 0];
+    w0[1] = t[ 1];
+    w0[2] = t[ 2];
+    w0[3] = t[ 3];
+    w1[0] = t[ 4];
+    w1[1] = t[ 5];
+    w1[2] = t[ 6];
+    w1[3] = t[ 7];
+    w2[0] = t[ 8];
+    w2[1] = t[ 9];
+    w2[2] = t[10];
+    w2[3] = t[11];
+    w3[0] = t[12];
+    w3[1] = t[13];
+    w3[2] = t[14];
+    w3[3] = t[15];
 
     make_utf16le_S (w3, w6, w7);
     make_utf16le_S (w2, w4, w5);
@@ -2290,58 +2809,86 @@ DECLSPEC void sha512_transform_vector (PRIVATE_AS const u32x *w0, PRIVATE_AS con
   u64x we_t = hl32_to_64 (w7[0], w7[1]);
   u64x wf_t = hl32_to_64 (w7[2], w7[3]);
 
-  #define ROUND_EXPAND()                            \
-  {                                                 \
-    w0_t = SHA512_EXPAND (we_t, w9_t, w1_t, w0_t);  \
-    w1_t = SHA512_EXPAND (wf_t, wa_t, w2_t, w1_t);  \
-    w2_t = SHA512_EXPAND (w0_t, wb_t, w3_t, w2_t);  \
-    w3_t = SHA512_EXPAND (w1_t, wc_t, w4_t, w3_t);  \
-    w4_t = SHA512_EXPAND (w2_t, wd_t, w5_t, w4_t);  \
-    w5_t = SHA512_EXPAND (w3_t, we_t, w6_t, w5_t);  \
-    w6_t = SHA512_EXPAND (w4_t, wf_t, w7_t, w6_t);  \
-    w7_t = SHA512_EXPAND (w5_t, w0_t, w8_t, w7_t);  \
-    w8_t = SHA512_EXPAND (w6_t, w1_t, w9_t, w8_t);  \
-    w9_t = SHA512_EXPAND (w7_t, w2_t, wa_t, w9_t);  \
-    wa_t = SHA512_EXPAND (w8_t, w3_t, wb_t, wa_t);  \
-    wb_t = SHA512_EXPAND (w9_t, w4_t, wc_t, wb_t);  \
-    wc_t = SHA512_EXPAND (wa_t, w5_t, wd_t, wc_t);  \
-    wd_t = SHA512_EXPAND (wb_t, w6_t, we_t, wd_t);  \
-    we_t = SHA512_EXPAND (wc_t, w7_t, wf_t, we_t);  \
-    wf_t = SHA512_EXPAND (wd_t, w8_t, w0_t, wf_t);  \
-  }
-
-  #define ROUND_STEP(i)                                                                   \
-  {                                                                                       \
-    SHA512_STEP (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w0_t, k_sha512[i +  0]); \
-    SHA512_STEP (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w1_t, k_sha512[i +  1]); \
-    SHA512_STEP (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, w2_t, k_sha512[i +  2]); \
-    SHA512_STEP (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, w3_t, k_sha512[i +  3]); \
-    SHA512_STEP (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, w4_t, k_sha512[i +  4]); \
-    SHA512_STEP (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, w5_t, k_sha512[i +  5]); \
-    SHA512_STEP (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, w6_t, k_sha512[i +  6]); \
-    SHA512_STEP (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, w7_t, k_sha512[i +  7]); \
-    SHA512_STEP (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w8_t, k_sha512[i +  8]); \
-    SHA512_STEP (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w9_t, k_sha512[i +  9]); \
-    SHA512_STEP (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, wa_t, k_sha512[i + 10]); \
-    SHA512_STEP (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, wb_t, k_sha512[i + 11]); \
-    SHA512_STEP (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, wc_t, k_sha512[i + 12]); \
-    SHA512_STEP (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, wd_t, k_sha512[i + 13]); \
-    SHA512_STEP (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, we_t, k_sha512[i + 14]); \
-    SHA512_STEP (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, wf_t, k_sha512[i + 15]); \
-  }
-
-  ROUND_STEP (0);
-
-  #ifdef _unroll
-  #pragma unroll
-  #endif
-  for (int i = 16; i < 80; i += 16)
-  {
-    ROUND_EXPAND (); ROUND_STEP (i);
-  }
-
-  #undef ROUND_EXPAND
-  #undef ROUND_STEP
+                                                 SHA512_STEP (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w0_t, SHA512C00);
+                                                 SHA512_STEP (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w1_t, SHA512C01);
+                                                 SHA512_STEP (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, w2_t, SHA512C02);
+                                                 SHA512_STEP (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, w3_t, SHA512C03);
+                                                 SHA512_STEP (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, w4_t, SHA512C04);
+                                                 SHA512_STEP (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, w5_t, SHA512C05);
+                                                 SHA512_STEP (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, w6_t, SHA512C06);
+                                                 SHA512_STEP (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, w7_t, SHA512C07);
+                                                 SHA512_STEP (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w8_t, SHA512C08);
+                                                 SHA512_STEP (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w9_t, SHA512C09);
+                                                 SHA512_STEP (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, wa_t, SHA512C0a);
+                                                 SHA512_STEP (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, wb_t, SHA512C0b);
+                                                 SHA512_STEP (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, wc_t, SHA512C0c);
+                                                 SHA512_STEP (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, wd_t, SHA512C0d);
+                                                 SHA512_STEP (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, we_t, SHA512C0e);
+                                                 SHA512_STEP (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, wf_t, SHA512C0f);
+  w0_t = SHA512_EXPAND (we_t, w9_t, w1_t, w0_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w0_t, SHA512C10);
+  w1_t = SHA512_EXPAND (wf_t, wa_t, w2_t, w1_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w1_t, SHA512C11);
+  w2_t = SHA512_EXPAND (w0_t, wb_t, w3_t, w2_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, w2_t, SHA512C12);
+  w3_t = SHA512_EXPAND (w1_t, wc_t, w4_t, w3_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, w3_t, SHA512C13);
+  w4_t = SHA512_EXPAND (w2_t, wd_t, w5_t, w4_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, w4_t, SHA512C14);
+  w5_t = SHA512_EXPAND (w3_t, we_t, w6_t, w5_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, w5_t, SHA512C15);
+  w6_t = SHA512_EXPAND (w4_t, wf_t, w7_t, w6_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, w6_t, SHA512C16);
+  w7_t = SHA512_EXPAND (w5_t, w0_t, w8_t, w7_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, w7_t, SHA512C17);
+  w8_t = SHA512_EXPAND (w6_t, w1_t, w9_t, w8_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w8_t, SHA512C18);
+  w9_t = SHA512_EXPAND (w7_t, w2_t, wa_t, w9_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w9_t, SHA512C19);
+  wa_t = SHA512_EXPAND (w8_t, w3_t, wb_t, wa_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, wa_t, SHA512C1a);
+  wb_t = SHA512_EXPAND (w9_t, w4_t, wc_t, wb_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, wb_t, SHA512C1b);
+  wc_t = SHA512_EXPAND (wa_t, w5_t, wd_t, wc_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, wc_t, SHA512C1c);
+  wd_t = SHA512_EXPAND (wb_t, w6_t, we_t, wd_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, wd_t, SHA512C1d);
+  we_t = SHA512_EXPAND (wc_t, w7_t, wf_t, we_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, we_t, SHA512C1e);
+  wf_t = SHA512_EXPAND (wd_t, w8_t, w0_t, wf_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, wf_t, SHA512C1f);
+  w0_t = SHA512_EXPAND (we_t, w9_t, w1_t, w0_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w0_t, SHA512C20);
+  w1_t = SHA512_EXPAND (wf_t, wa_t, w2_t, w1_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w1_t, SHA512C21);
+  w2_t = SHA512_EXPAND (w0_t, wb_t, w3_t, w2_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, w2_t, SHA512C22);
+  w3_t = SHA512_EXPAND (w1_t, wc_t, w4_t, w3_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, w3_t, SHA512C23);
+  w4_t = SHA512_EXPAND (w2_t, wd_t, w5_t, w4_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, w4_t, SHA512C24);
+  w5_t = SHA512_EXPAND (w3_t, we_t, w6_t, w5_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, w5_t, SHA512C25);
+  w6_t = SHA512_EXPAND (w4_t, wf_t, w7_t, w6_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, w6_t, SHA512C26);
+  w7_t = SHA512_EXPAND (w5_t, w0_t, w8_t, w7_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, w7_t, SHA512C27);
+  w8_t = SHA512_EXPAND (w6_t, w1_t, w9_t, w8_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w8_t, SHA512C28);
+  w9_t = SHA512_EXPAND (w7_t, w2_t, wa_t, w9_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w9_t, SHA512C29);
+  wa_t = SHA512_EXPAND (w8_t, w3_t, wb_t, wa_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, wa_t, SHA512C2a);
+  wb_t = SHA512_EXPAND (w9_t, w4_t, wc_t, wb_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, wb_t, SHA512C2b);
+  wc_t = SHA512_EXPAND (wa_t, w5_t, wd_t, wc_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, wc_t, SHA512C2c);
+  wd_t = SHA512_EXPAND (wb_t, w6_t, we_t, wd_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, wd_t, SHA512C2d);
+  we_t = SHA512_EXPAND (wc_t, w7_t, wf_t, we_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, we_t, SHA512C2e);
+  wf_t = SHA512_EXPAND (wd_t, w8_t, w0_t, wf_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, wf_t, SHA512C2f);
+  w0_t = SHA512_EXPAND (we_t, w9_t, w1_t, w0_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w0_t, SHA512C30);
+  w1_t = SHA512_EXPAND (wf_t, wa_t, w2_t, w1_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w1_t, SHA512C31);
+  w2_t = SHA512_EXPAND (w0_t, wb_t, w3_t, w2_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, w2_t, SHA512C32);
+  w3_t = SHA512_EXPAND (w1_t, wc_t, w4_t, w3_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, w3_t, SHA512C33);
+  w4_t = SHA512_EXPAND (w2_t, wd_t, w5_t, w4_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, w4_t, SHA512C34);
+  w5_t = SHA512_EXPAND (w3_t, we_t, w6_t, w5_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, w5_t, SHA512C35);
+  w6_t = SHA512_EXPAND (w4_t, wf_t, w7_t, w6_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, w6_t, SHA512C36);
+  w7_t = SHA512_EXPAND (w5_t, w0_t, w8_t, w7_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, w7_t, SHA512C37);
+  w8_t = SHA512_EXPAND (w6_t, w1_t, w9_t, w8_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w8_t, SHA512C38);
+  w9_t = SHA512_EXPAND (w7_t, w2_t, wa_t, w9_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w9_t, SHA512C39);
+  wa_t = SHA512_EXPAND (w8_t, w3_t, wb_t, wa_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, wa_t, SHA512C3a);
+  wb_t = SHA512_EXPAND (w9_t, w4_t, wc_t, wb_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, wb_t, SHA512C3b);
+  wc_t = SHA512_EXPAND (wa_t, w5_t, wd_t, wc_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, wc_t, SHA512C3c);
+  wd_t = SHA512_EXPAND (wb_t, w6_t, we_t, wd_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, wd_t, SHA512C3d);
+  we_t = SHA512_EXPAND (wc_t, w7_t, wf_t, we_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, we_t, SHA512C3e);
+  wf_t = SHA512_EXPAND (wd_t, w8_t, w0_t, wf_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, wf_t, SHA512C3f);
+  w0_t = SHA512_EXPAND (we_t, w9_t, w1_t, w0_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w0_t, SHA512C40);
+  w1_t = SHA512_EXPAND (wf_t, wa_t, w2_t, w1_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w1_t, SHA512C41);
+  w2_t = SHA512_EXPAND (w0_t, wb_t, w3_t, w2_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, w2_t, SHA512C42);
+  w3_t = SHA512_EXPAND (w1_t, wc_t, w4_t, w3_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, w3_t, SHA512C43);
+  w4_t = SHA512_EXPAND (w2_t, wd_t, w5_t, w4_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, w4_t, SHA512C44);
+  w5_t = SHA512_EXPAND (w3_t, we_t, w6_t, w5_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, w5_t, SHA512C45);
+  w6_t = SHA512_EXPAND (w4_t, wf_t, w7_t, w6_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, w6_t, SHA512C46);
+  w7_t = SHA512_EXPAND (w5_t, w0_t, w8_t, w7_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, w7_t, SHA512C47);
+  w8_t = SHA512_EXPAND (w6_t, w1_t, w9_t, w8_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, a, b, c, d, e, f, g, h, w8_t, SHA512C48);
+  w9_t = SHA512_EXPAND (w7_t, w2_t, wa_t, w9_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, h, a, b, c, d, e, f, g, w9_t, SHA512C49);
+  wa_t = SHA512_EXPAND (w8_t, w3_t, wb_t, wa_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, g, h, a, b, c, d, e, f, wa_t, SHA512C4a);
+  wb_t = SHA512_EXPAND (w9_t, w4_t, wc_t, wb_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, f, g, h, a, b, c, d, e, wb_t, SHA512C4b);
+  wc_t = SHA512_EXPAND (wa_t, w5_t, wd_t, wc_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, e, f, g, h, a, b, c, d, wc_t, SHA512C4c);
+  wd_t = SHA512_EXPAND (wb_t, w6_t, we_t, wd_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, d, e, f, g, h, a, b, c, wd_t, SHA512C4d);
+  we_t = SHA512_EXPAND (wc_t, w7_t, wf_t, we_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, c, d, e, f, g, h, a, b, we_t, SHA512C4e);
+  wf_t = SHA512_EXPAND (wd_t, w8_t, w0_t, wf_t); SHA512_STEP (SHA512_F0o, SHA512_F1o, b, c, d, e, f, g, h, a, wf_t, SHA512C4f);
 
   digest[0] += a;
   digest[1] += b;
@@ -2703,38 +3250,75 @@ DECLSPEC void sha512_update_vector (PRIVATE_AS sha512_ctx_vector_t *ctx, PRIVATE
     sha512_update_vector_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, 128);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
-  w4[0] = w[pos4 + 16];
-  w4[1] = w[pos4 + 17];
-  w4[2] = w[pos4 + 18];
-  w4[3] = w[pos4 + 19];
-  w5[0] = w[pos4 + 20];
-  w5[1] = w[pos4 + 21];
-  w5[2] = w[pos4 + 22];
-  w5[3] = w[pos4 + 23];
-  w6[0] = w[pos4 + 24];
-  w6[1] = w[pos4 + 25];
-  w6[2] = w[pos4 + 26];
-  w6[3] = w[pos4 + 27];
-  w7[0] = w[pos4 + 28];
-  w7[1] = w[pos4 + 29];
-  w7[2] = w[pos4 + 30];
-  w7[3] = w[pos4 + 31];
+  const int tail = len - pos1;
+
+  u32x t[32];
+
+  t[ 0] = hc_bounded_word_be (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_be (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_be (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_be (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_be (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_be (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_be (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_be (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_be (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_be (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_be (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_be (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_be (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_be (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_be (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_be (w, pos4 + 15, tail -  60);
+  t[16] = hc_bounded_word_be (w, pos4 + 16, tail -  64);
+  t[17] = hc_bounded_word_be (w, pos4 + 17, tail -  68);
+  t[18] = hc_bounded_word_be (w, pos4 + 18, tail -  72);
+  t[19] = hc_bounded_word_be (w, pos4 + 19, tail -  76);
+  t[20] = hc_bounded_word_be (w, pos4 + 20, tail -  80);
+  t[21] = hc_bounded_word_be (w, pos4 + 21, tail -  84);
+  t[22] = hc_bounded_word_be (w, pos4 + 22, tail -  88);
+  t[23] = hc_bounded_word_be (w, pos4 + 23, tail -  92);
+  t[24] = hc_bounded_word_be (w, pos4 + 24, tail -  96);
+  t[25] = hc_bounded_word_be (w, pos4 + 25, tail - 100);
+  t[26] = hc_bounded_word_be (w, pos4 + 26, tail - 104);
+  t[27] = hc_bounded_word_be (w, pos4 + 27, tail - 108);
+  t[28] = hc_bounded_word_be (w, pos4 + 28, tail - 112);
+  t[29] = hc_bounded_word_be (w, pos4 + 29, tail - 116);
+  t[30] = hc_bounded_word_be (w, pos4 + 30, tail - 120);
+  t[31] = hc_bounded_word_be (w, pos4 + 31, tail - 124);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
+  w2[0] = t[ 8];
+  w2[1] = t[ 9];
+  w2[2] = t[10];
+  w2[3] = t[11];
+  w3[0] = t[12];
+  w3[1] = t[13];
+  w3[2] = t[14];
+  w3[3] = t[15];
+  w4[0] = t[16];
+  w4[1] = t[17];
+  w4[2] = t[18];
+  w4[3] = t[19];
+  w5[0] = t[20];
+  w5[1] = t[21];
+  w5[2] = t[22];
+  w5[3] = t[23];
+  w6[0] = t[24];
+  w6[1] = t[25];
+  w6[2] = t[26];
+  w6[3] = t[27];
+  w7[0] = t[28];
+  w7[1] = t[29];
+  w7[2] = t[30];
+  w7[3] = t[31];
 
   sha512_update_vector_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, len - pos1);
 }
@@ -2824,71 +3408,75 @@ DECLSPEC void sha512_update_vector_swap (PRIVATE_AS sha512_ctx_vector_t *ctx, PR
     sha512_update_vector_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, 128);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
-  w4[0] = w[pos4 + 16];
-  w4[1] = w[pos4 + 17];
-  w4[2] = w[pos4 + 18];
-  w4[3] = w[pos4 + 19];
-  w5[0] = w[pos4 + 20];
-  w5[1] = w[pos4 + 21];
-  w5[2] = w[pos4 + 22];
-  w5[3] = w[pos4 + 23];
-  w6[0] = w[pos4 + 24];
-  w6[1] = w[pos4 + 25];
-  w6[2] = w[pos4 + 26];
-  w6[3] = w[pos4 + 27];
-  w7[0] = w[pos4 + 28];
-  w7[1] = w[pos4 + 29];
-  w7[2] = w[pos4 + 30];
-  w7[3] = w[pos4 + 31];
+  const int tail = len - pos1;
 
-  w0[0] = hc_swap32 (w0[0]);
-  w0[1] = hc_swap32 (w0[1]);
-  w0[2] = hc_swap32 (w0[2]);
-  w0[3] = hc_swap32 (w0[3]);
-  w1[0] = hc_swap32 (w1[0]);
-  w1[1] = hc_swap32 (w1[1]);
-  w1[2] = hc_swap32 (w1[2]);
-  w1[3] = hc_swap32 (w1[3]);
-  w2[0] = hc_swap32 (w2[0]);
-  w2[1] = hc_swap32 (w2[1]);
-  w2[2] = hc_swap32 (w2[2]);
-  w2[3] = hc_swap32 (w2[3]);
-  w3[0] = hc_swap32 (w3[0]);
-  w3[1] = hc_swap32 (w3[1]);
-  w3[2] = hc_swap32 (w3[2]);
-  w3[3] = hc_swap32 (w3[3]);
-  w4[0] = hc_swap32 (w4[0]);
-  w4[1] = hc_swap32 (w4[1]);
-  w4[2] = hc_swap32 (w4[2]);
-  w4[3] = hc_swap32 (w4[3]);
-  w5[0] = hc_swap32 (w5[0]);
-  w5[1] = hc_swap32 (w5[1]);
-  w5[2] = hc_swap32 (w5[2]);
-  w5[3] = hc_swap32 (w5[3]);
-  w6[0] = hc_swap32 (w6[0]);
-  w6[1] = hc_swap32 (w6[1]);
-  w6[2] = hc_swap32 (w6[2]);
-  w6[3] = hc_swap32 (w6[3]);
-  w7[0] = hc_swap32 (w7[0]);
-  w7[1] = hc_swap32 (w7[1]);
-  w7[2] = hc_swap32 (w7[2]);
-  w7[3] = hc_swap32 (w7[3]);
+  u32x t[32];
+
+  t[ 0] = hc_bounded_word_le (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_le (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_le (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_le (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_le (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_le (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_le (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_le (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_le (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_le (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_le (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_le (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_le (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_le (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_le (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_le (w, pos4 + 15, tail -  60);
+  t[16] = hc_bounded_word_le (w, pos4 + 16, tail -  64);
+  t[17] = hc_bounded_word_le (w, pos4 + 17, tail -  68);
+  t[18] = hc_bounded_word_le (w, pos4 + 18, tail -  72);
+  t[19] = hc_bounded_word_le (w, pos4 + 19, tail -  76);
+  t[20] = hc_bounded_word_le (w, pos4 + 20, tail -  80);
+  t[21] = hc_bounded_word_le (w, pos4 + 21, tail -  84);
+  t[22] = hc_bounded_word_le (w, pos4 + 22, tail -  88);
+  t[23] = hc_bounded_word_le (w, pos4 + 23, tail -  92);
+  t[24] = hc_bounded_word_le (w, pos4 + 24, tail -  96);
+  t[25] = hc_bounded_word_le (w, pos4 + 25, tail - 100);
+  t[26] = hc_bounded_word_le (w, pos4 + 26, tail - 104);
+  t[27] = hc_bounded_word_le (w, pos4 + 27, tail - 108);
+  t[28] = hc_bounded_word_le (w, pos4 + 28, tail - 112);
+  t[29] = hc_bounded_word_le (w, pos4 + 29, tail - 116);
+  t[30] = hc_bounded_word_le (w, pos4 + 30, tail - 120);
+  t[31] = hc_bounded_word_le (w, pos4 + 31, tail - 124);
+
+  w0[0] = hc_swap32 (t[ 0]);
+  w0[1] = hc_swap32 (t[ 1]);
+  w0[2] = hc_swap32 (t[ 2]);
+  w0[3] = hc_swap32 (t[ 3]);
+  w1[0] = hc_swap32 (t[ 4]);
+  w1[1] = hc_swap32 (t[ 5]);
+  w1[2] = hc_swap32 (t[ 6]);
+  w1[3] = hc_swap32 (t[ 7]);
+  w2[0] = hc_swap32 (t[ 8]);
+  w2[1] = hc_swap32 (t[ 9]);
+  w2[2] = hc_swap32 (t[10]);
+  w2[3] = hc_swap32 (t[11]);
+  w3[0] = hc_swap32 (t[12]);
+  w3[1] = hc_swap32 (t[13]);
+  w3[2] = hc_swap32 (t[14]);
+  w3[3] = hc_swap32 (t[15]);
+  w4[0] = hc_swap32 (t[16]);
+  w4[1] = hc_swap32 (t[17]);
+  w4[2] = hc_swap32 (t[18]);
+  w4[3] = hc_swap32 (t[19]);
+  w5[0] = hc_swap32 (t[20]);
+  w5[1] = hc_swap32 (t[21]);
+  w5[2] = hc_swap32 (t[22]);
+  w5[3] = hc_swap32 (t[23]);
+  w6[0] = hc_swap32 (t[24]);
+  w6[1] = hc_swap32 (t[25]);
+  w6[2] = hc_swap32 (t[26]);
+  w6[3] = hc_swap32 (t[27]);
+  w7[0] = hc_swap32 (t[28]);
+  w7[1] = hc_swap32 (t[29]);
+  w7[2] = hc_swap32 (t[30]);
+  w7[3] = hc_swap32 (t[31]);
 
   sha512_update_vector_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, len - pos1);
 }
@@ -2934,22 +3522,43 @@ DECLSPEC void sha512_update_vector_utf16le (PRIVATE_AS sha512_ctx_vector_t *ctx,
     sha512_update_vector_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, 64 * 2);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
+  const int tail = len - pos1;
+
+  u32x t[16];
+
+  t[ 0] = hc_bounded_word_be (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_be (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_be (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_be (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_be (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_be (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_be (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_be (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_be (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_be (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_be (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_be (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_be (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_be (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_be (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_be (w, pos4 + 15, tail -  60);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
+  w2[0] = t[ 8];
+  w2[1] = t[ 9];
+  w2[2] = t[10];
+  w2[3] = t[11];
+  w3[0] = t[12];
+  w3[1] = t[13];
+  w3[2] = t[14];
+  w3[3] = t[15];
 
   make_utf16le (w3, w6, w7);
   make_utf16le (w2, w4, w5);
@@ -3033,22 +3642,43 @@ DECLSPEC void sha512_update_vector_utf16le_swap (PRIVATE_AS sha512_ctx_vector_t 
     sha512_update_vector_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, 64 * 2);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
+  const int tail = len - pos1;
+
+  u32x t[16];
+
+  t[ 0] = hc_bounded_word_le (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_le (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_le (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_le (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_le (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_le (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_le (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_le (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_le (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_le (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_le (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_le (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_le (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_le (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_le (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_le (w, pos4 + 15, tail -  60);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
+  w2[0] = t[ 8];
+  w2[1] = t[ 9];
+  w2[2] = t[10];
+  w2[3] = t[11];
+  w3[0] = t[12];
+  w3[1] = t[13];
+  w3[2] = t[14];
+  w3[3] = t[15];
 
   make_utf16le (w3, w6, w7);
   make_utf16le (w2, w4, w5);
@@ -3132,22 +3762,43 @@ DECLSPEC void sha512_update_vector_utf16beN (PRIVATE_AS sha512_ctx_vector_t *ctx
     sha512_update_vector_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7, 64 * 2);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
+  const int tail = len - pos1;
+
+  u32x t[16];
+
+  t[ 0] = hc_bounded_word_be (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_be (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_be (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_be (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_be (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_be (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_be (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_be (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_be (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_be (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_be (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_be (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_be (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_be (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_be (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_be (w, pos4 + 15, tail -  60);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
+  w2[0] = t[ 8];
+  w2[1] = t[ 9];
+  w2[2] = t[10];
+  w2[3] = t[11];
+  w3[0] = t[12];
+  w3[1] = t[13];
+  w3[2] = t[14];
+  w3[3] = t[15];
 
   make_utf16beN (w3, w6, w7);
   make_utf16beN (w2, w4, w5);
@@ -3364,38 +4015,75 @@ DECLSPEC void sha512_hmac_init_vector (PRIVATE_AS sha512_hmac_ctx_vector_t *ctx,
   }
   else
   {
-    w0[0] = w[ 0];
-    w0[1] = w[ 1];
-    w0[2] = w[ 2];
-    w0[3] = w[ 3];
-    w1[0] = w[ 4];
-    w1[1] = w[ 5];
-    w1[2] = w[ 6];
-    w1[3] = w[ 7];
-    w2[0] = w[ 8];
-    w2[1] = w[ 9];
-    w2[2] = w[10];
-    w2[3] = w[11];
-    w3[0] = w[12];
-    w3[1] = w[13];
-    w3[2] = w[14];
-    w3[3] = w[15];
-    w4[0] = w[16];
-    w4[1] = w[17];
-    w4[2] = w[18];
-    w4[3] = w[19];
-    w5[0] = w[20];
-    w5[1] = w[21];
-    w5[2] = w[22];
-    w5[3] = w[23];
-    w6[0] = w[24];
-    w6[1] = w[25];
-    w6[2] = w[26];
-    w6[3] = w[27];
-    w7[0] = w[28];
-    w7[1] = w[29];
-    w7[2] = w[30];
-    w7[3] = w[31];
+    const int tail = len;
+
+    u32x t[32];
+
+    t[ 0] = hc_bounded_word_be (w,  0, tail -   0);
+    t[ 1] = hc_bounded_word_be (w,  1, tail -   4);
+    t[ 2] = hc_bounded_word_be (w,  2, tail -   8);
+    t[ 3] = hc_bounded_word_be (w,  3, tail -  12);
+    t[ 4] = hc_bounded_word_be (w,  4, tail -  16);
+    t[ 5] = hc_bounded_word_be (w,  5, tail -  20);
+    t[ 6] = hc_bounded_word_be (w,  6, tail -  24);
+    t[ 7] = hc_bounded_word_be (w,  7, tail -  28);
+    t[ 8] = hc_bounded_word_be (w,  8, tail -  32);
+    t[ 9] = hc_bounded_word_be (w,  9, tail -  36);
+    t[10] = hc_bounded_word_be (w, 10, tail -  40);
+    t[11] = hc_bounded_word_be (w, 11, tail -  44);
+    t[12] = hc_bounded_word_be (w, 12, tail -  48);
+    t[13] = hc_bounded_word_be (w, 13, tail -  52);
+    t[14] = hc_bounded_word_be (w, 14, tail -  56);
+    t[15] = hc_bounded_word_be (w, 15, tail -  60);
+    t[16] = hc_bounded_word_be (w, 16, tail -  64);
+    t[17] = hc_bounded_word_be (w, 17, tail -  68);
+    t[18] = hc_bounded_word_be (w, 18, tail -  72);
+    t[19] = hc_bounded_word_be (w, 19, tail -  76);
+    t[20] = hc_bounded_word_be (w, 20, tail -  80);
+    t[21] = hc_bounded_word_be (w, 21, tail -  84);
+    t[22] = hc_bounded_word_be (w, 22, tail -  88);
+    t[23] = hc_bounded_word_be (w, 23, tail -  92);
+    t[24] = hc_bounded_word_be (w, 24, tail -  96);
+    t[25] = hc_bounded_word_be (w, 25, tail - 100);
+    t[26] = hc_bounded_word_be (w, 26, tail - 104);
+    t[27] = hc_bounded_word_be (w, 27, tail - 108);
+    t[28] = hc_bounded_word_be (w, 28, tail - 112);
+    t[29] = hc_bounded_word_be (w, 29, tail - 116);
+    t[30] = hc_bounded_word_be (w, 30, tail - 120);
+    t[31] = hc_bounded_word_be (w, 31, tail - 124);
+
+    w0[0] = t[ 0];
+    w0[1] = t[ 1];
+    w0[2] = t[ 2];
+    w0[3] = t[ 3];
+    w1[0] = t[ 4];
+    w1[1] = t[ 5];
+    w1[2] = t[ 6];
+    w1[3] = t[ 7];
+    w2[0] = t[ 8];
+    w2[1] = t[ 9];
+    w2[2] = t[10];
+    w2[3] = t[11];
+    w3[0] = t[12];
+    w3[1] = t[13];
+    w3[2] = t[14];
+    w3[3] = t[15];
+    w4[0] = t[16];
+    w4[1] = t[17];
+    w4[2] = t[18];
+    w4[3] = t[19];
+    w5[0] = t[20];
+    w5[1] = t[21];
+    w5[2] = t[22];
+    w5[3] = t[23];
+    w6[0] = t[24];
+    w6[1] = t[25];
+    w6[2] = t[26];
+    w6[3] = t[27];
+    w7[0] = t[28];
+    w7[1] = t[29];
+    w7[2] = t[30];
+    w7[3] = t[31];
   }
 
   sha512_hmac_init_vector_128 (ctx, w0, w1, w2, w3, w4, w5, w6, w7);

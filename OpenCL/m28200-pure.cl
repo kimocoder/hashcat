@@ -40,33 +40,18 @@ KERNEL_FQ KERNEL_FA void m28200_loop_prepare (KERN_ATTR_TMPS_ESALT (scrypt_tmp_t
 {
   const u64 gid = get_global_id (0);
   const u64 lid = get_local_id (0);
-  const u64 lsz = get_local_size (0);
   const u64 bid = get_group_id (0);
 
-  if (gid >= GID_CNT) return;
-
-  u32 X[STATE_CNT4];
-
-  GLOBAL_AS u32 *P = tmps[gid].out + (SALT_REPEAT * STATE_CNT4);
-
-  scrypt_smix_init (P, X, d_extra0_buf, d_extra1_buf, d_extra2_buf, d_extra3_buf, gid, lid, lsz, bid);
+  scrypt_smix_init_kernel (tmps[0].out, sizeof (tmps[0]), d_extra0_buf, d_extra1_buf, d_extra2_buf, d_extra3_buf, gid, lid, bid, GID_CNT, SALT_REPEAT, MODULE_TUNE);
 }
 
 KERNEL_FQ KERNEL_FA void m28200_loop (KERN_ATTR_TMPS_ESALT (scrypt_tmp_t, exodus_t))
 {
   const u64 gid = get_global_id (0);
   const u64 lid = get_local_id (0);
-  const u64 lsz = get_local_size (0);
   const u64 bid = get_group_id (0);
 
-  if (gid >= GID_CNT) return;
-
-  u32 X[STATE_CNT4];
-  u32 T[STATE_CNT4];
-
-  GLOBAL_AS u32 *P = tmps[gid].out + (SALT_REPEAT * STATE_CNT4);
-
-  scrypt_smix_loop (P, X, T, d_extra0_buf, d_extra1_buf, d_extra2_buf, d_extra3_buf, gid, lid, lsz, bid);
+  scrypt_smix_loop_kernel (tmps[0].out, sizeof (tmps[0]), d_extra0_buf, d_extra1_buf, d_extra2_buf, d_extra3_buf, gid, lid, bid, GID_CNT, SALT_REPEAT, MODULE_TUNE, LOOP_CNT);
 }
 
 KERNEL_FQ KERNEL_FA void m28200_comp (KERN_ATTR_TMPS_ESALT (scrypt_tmp_t, exodus_t))
@@ -172,7 +157,7 @@ KERNEL_FQ KERNEL_FA void m28200_comp (KERN_ATTR_TMPS_ESALT (scrypt_tmp_t, exodus
 
   AES_GCM_GHASH_GLOBAL (subKey, aad_buf, aad_len, esalt_bufs[DIGESTS_OFFSET_HOST].data, 32, S);
 
-  AES_GCM_GCTR (key, J0, S, S_len, T, s_te0, s_te1, s_te2, s_te3, s_te4);
+  AES_GCM_GCTR (key, 256, J0, S, S_len, T, s_te0, s_te1, s_te2, s_te3, s_te4);
 
   const u32 r0 = T[0];
   const u32 r1 = T[1];

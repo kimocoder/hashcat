@@ -1,5 +1,5 @@
-#!/usr/bin/python3
-# Converts gitea PBKDF2-HMAC-SHA256 hashes into a format hashcat can use
+#!/usr/bin/env python3
+# Converts gitea PBKDF2-HMAC-SHA256 hashes into a format hashcat can use with hashcat mode 40024
 # written by unix-ninja
 
 import argparse
@@ -29,7 +29,7 @@ def convert_hash(hash_string):
     if len(bytes1) > len(bytes2):
         salt_bytes = bytes2
         hash_bytes = bytes1
-    else:  
+    else:
         salt_bytes = bytes1
         hash_bytes = bytes2
 
@@ -45,14 +45,14 @@ def main():
         formatter_class=argparse.RawTextHelpFormatter,
         epilog="""Example:
     gitea2hashcat.py <salt1>:<hash1> <hash2>|<salt2> ... or pipe input from stdin.
-        
+
     You can also dump output straight from sqlite into this script:
         sqlite3 gitea.db 'select salt,passwd from user;' | gitea2hashcat.py""")
     parser.add_argument('hashes', nargs='*', help='SALT+HASH strings to convert')
     args = parser.parse_args()
 
     # ... (rest of the main function remains the same)
-    print("[+] Run the output hashes through hashcat mode 10900 (PBKDF2-HMAC-SHA256)")
+    print("[+] Run the output hashes through hashcat mode 40024 (PBKDF2-HMAC-SHA256)")
     print()
 
     if args.hashes:

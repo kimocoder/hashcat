@@ -20,12 +20,14 @@
 
 typedef struct krb5asrep
 {
-  u32 account_info[512];
+  u32 raw_token[512];
   u32 checksum[4];
   u32 edata2[5120];
   u32 edata2_len;
   u32 format;
 
+  u32 user[128];
+  u32 realm[128];
 } krb5asrep_t;
 
 DECLSPEC int decrypt_and_check (LOCAL_AS u32 *S, PRIVATE_AS u32 *data, GLOBAL_AS const u32 *edata2, const u32 edata2_len, PRIVATE_AS const u32 *K2, PRIVATE_AS const u32 *checksum, const u64 lid)
@@ -51,8 +53,10 @@ DECLSPEC int decrypt_and_check (LOCAL_AS u32 *S, PRIVATE_AS u32 *data, GLOBAL_AS
   rc4_next_16_global (S, 0, 0, edata2 + 0, out0, lid);
 
   if (((out0[2] & 0x00ff80ff) != 0x00300079) &&
+      ((out0[2] & 0x00ff80ff) != 0x0030007a) &&
       ((out0[2] & 0xFF00FFFF) != 0x30008179) &&
-      ((out0[2] & 0x0000FFFF) != 0x00008279 || (out0[3] & 0x000000FF) != 0x00000030))
+      ((out0[2] & 0xFF00FFFF) != 0x3000817a) &&
+      (((out0[2] & 0x0000FFFF) != 0x00008279 && (out0[2] & 0x0000FFFF) != 0x0000827a) || (out0[3] & 0x000000FF) != 0x00000030))
       return 0;
 
   rc4_init_128 (S, data, lid);

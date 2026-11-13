@@ -8,12 +8,18 @@
 #include "memory.h"
 #include "event.h"
 #include "shared.h"
+#include "path.h"
 #include "folder.h"
 #include <libgen.h>
+#include <limits.h>
 
 #if defined (__APPLE__)
 #include "event.h"
-#elif defined (__FreeBSD__) || defined (__NetBSD__)
+#elif defined (__OpenBSD__)
+#define _OPENBSD_SOURCE
+#include <stdlib.h>
+#include <sys/sysctl.h>
+#elif defined (__FreeBSD__) || defined (__NetBSD__) || defined (__DragonFly__)
 #include <sys/param.h>
 #include <sys/sysctl.h>
 #endif
@@ -34,9 +40,21 @@ static int get_exec_path (char *exec_path, const size_t exec_path_sz)
 
   #elif defined (_WIN)
 
-  memset (exec_path, 0, exec_path_sz);
+  // The application manifest declares activeCodePage as UTF-8, so the process code page is UTF-8
+  // before the CRT starts and the narrow call writes UTF-8 straight into exec_path. There is no wide
+  // buffer to convert and no error path to free one on.
+  //
+  // GetModuleFileName answers nSize for a path that does not fit and leaves a truncated name behind,
+  // so a full buffer is a failure here. Letting it through would build install_dir, and every folder
+  // taken from it, out of half a path.
 
-  const int len = 0;
+  const DWORD win_len = GetModuleFileNameA (NULL, exec_path, (DWORD) (exec_path_sz - 1));
+
+  if (win_len == 0) return -1;
+
+  if (win_len >= (DWORD) (exec_path_sz - 1)) return -1;
+
+  const size_t len = (size_t) win_len;
 
   #elif defined (__APPLE__)
 
@@ -46,7 +64,7 @@ static int get_exec_path (char *exec_path, const size_t exec_path_sz)
 
   const size_t len = strlen (exec_path);
 
-  #elif defined (__FreeBSD__)
+  #elif defined (__FreeBSD__) || defined (__DragonFly__)
 
   int mib[4];
 
@@ -73,6 +91,41 @@ static int get_exec_path (char *exec_path, const size_t exec_path_sz)
   size_t size = exec_path_sz;
 
   sysctl (mib, 4, exec_path, &size, NULL, 0);
+
+  const size_t len = strlen (exec_path);
+
+  #elif defined (__OpenBSD__)
+
+  int mib[4];
+
+  mib[0] = CTL_KERN;
+  mib[1] = KERN_PROC_ARGS;
+  mib[2] = getpid ();
+  mib[3] = KERN_PROC_ARGV;
+
+  size_t size = 0;
+
+  if (sysctl (mib, 4, NULL, &size, NULL, 0) == -1) return -1;
+
+  char **argv = hcmalloc (size);
+
+  if (!argv) return -1;
+
+  if (sysctl (mib, 4, argv, &size, NULL, 0) == -1)
+  {
+    free (argv);
+
+    return -1;
+  }
+
+  if (argv[0])
+  {
+    strncpy (exec_path, argv[0], exec_path_sz - 1);
+
+    exec_path[exec_path_sz - 1] = '\0';
+  }
+
+  free (argv);
 
   const size_t len = strlen (exec_path);
 
@@ -109,10 +162,6 @@ static void get_install_dir (char *install_dir, const char *exec_path)
 #if defined (_POSIX)
 static void get_profile_dir (char *profile_dir, const char *home_dir)
 {
-  snprintf (profile_dir, HCBUFSIZ_TINY, "%s/%s", home_dir, DOT_HASHCAT);
-
-  if (hc_path_is_directory (profile_dir)) return;
-
   char *xdg_data_home = getenv ("XDG_DATA_HOME");
 
   if (xdg_data_home)
@@ -127,10 +176,6 @@ static void get_profile_dir (char *profile_dir, const char *home_dir)
 
 static void get_cache_dir (char *cache_dir, const char *home_dir)
 {
-  snprintf (cache_dir, HCBUFSIZ_TINY, "%s/%s", home_dir, DOT_HASHCAT);
-
-  if (hc_path_is_directory (cache_dir)) return;
-
   char *xdg_cache_home = getenv ("XDG_CACHE_HOME");
 
   if (xdg_cache_home)
@@ -297,9 +342,144 @@ char **scan_directory (const char *path)
   return files;
 }
 
+// The folders the module options need, which folder_config_init () keeps as shared_dir and
+// cache_dir. The module options are collected before the command line is parsed, and
+// folder_config_init () cannot run that early: it creates the per user folders and reads the rest of
+// the command line. So the two decisions needed then are made here the same way, without creating
+// anything. cache_path is what --cache-path names, or NULL.
+
+int folder_early_dirs (const folder_request_t *folder_request, MAYBE_UNUSED const char *install_folder, MAYBE_UNUSED const char *shared_folder, const char *cache_path, char **shared_dir, char **cache_dir)
+{
+  *shared_dir = NULL;
+  *cache_dir  = NULL;
+
+  const size_t exec_path_sz = 1024;
+
+  char *exec_path = (char *) hcmalloc (exec_path_sz);
+
+  if (get_exec_path (exec_path, exec_path_sz) == -1)
+  {
+    hcfree (exec_path);
+
+    return -1;
+  }
+
+  char *install_dir = (char *) hcmalloc (HCBUFSIZ_TINY);
+
+  #if defined (_POSIX)
+
+  static const char SLASH[] = "/";
+
+  if (install_folder == NULL) install_folder = SLASH;
+
+  char *resolved_install_folder = realpath (install_folder, NULL);
+  char *resolved_exec_path      = realpath (exec_path, NULL);
+
+  hcfree (exec_path);
+
+  if (resolved_install_folder == NULL) resolved_install_folder = hcstrdup (SLASH);
+
+  if (resolved_exec_path == NULL)
+  {
+    hcfree (resolved_install_folder);
+    hcfree (install_dir);
+
+    return -1;
+  }
+
+  get_install_dir (install_dir, resolved_exec_path);
+
+  const bool installed = ((folder_request->given == true) || (strcmp (install_dir, resolved_install_folder) == 0));
+
+  hcfree (resolved_install_folder);
+  hcfree (resolved_exec_path);
+
+  if (installed == true)
+  {
+    *shared_dir = (shared_folder != NULL) ? hcstrdup (shared_folder) : hcstrdup (install_dir);
+
+    // an installed hashcat caches per user, and without a home there is no cache directory
+
+    if (cache_path != NULL)
+    {
+      *cache_dir = hcstrdup (cache_path);
+    }
+    else
+    {
+      struct passwd pw;
+      struct passwd *pwp = NULL;
+
+      char buf[HCBUFSIZ_TINY];
+
+      memset (buf, 0, sizeof (buf));
+      memset (&pw, 0, sizeof (pw));
+
+      getpwuid_r (getuid (), &pw, buf, HCBUFSIZ_TINY, &pwp);
+
+      if (pwp != NULL)
+      {
+        char user_cache_dir[HCBUFSIZ_TINY];
+
+        get_cache_dir (user_cache_dir, pwp->pw_dir);
+
+        hc_asprintf (cache_dir, "%s/%s", user_cache_dir, CACHE_FOLDER);
+      }
+    }
+
+    hcfree (install_dir);
+
+    return 0;
+  }
+
+  #else
+
+  get_install_dir (install_dir, exec_path);
+
+  hcfree (exec_path);
+
+  #endif
+
+  // One folder holds everything, the executable's own. A program that named its folders only gets
+  // here on Windows, and folder_config_init () explains what it gets there.
+
+  const char *shared_root = install_dir;
+  const char *cache_root  = install_dir;
+
+  if ((folder_request->given == true) && (shared_folder != NULL))
+  {
+    shared_root = shared_folder;
+    cache_root  = (folder_request->profile_folder != NULL) ? folder_request->profile_folder : shared_folder;
+  }
+
+  *shared_dir = hcstrdup (shared_root);
+
+  if (cache_path != NULL)
+  {
+    *cache_dir = hcstrdup (cache_path);
+  }
+  else
+  {
+    hc_asprintf (cache_dir, "%s/%s", cache_root, CACHE_FOLDER);
+  }
+
+  hcfree (install_dir);
+
+  return 0;
+}
+
 int folder_config_init (hashcat_ctx_t *hashcat_ctx, MAYBE_UNUSED const char *install_folder, MAYBE_UNUSED const char *shared_folder)
 {
   folder_config_t *folder_config = hashcat_ctx->folder_config;
+  const user_options_t *user_options = hashcat_ctx->user_options;
+
+  const folder_request_t *folder_request = &folder_config->request;
+
+  if ((folder_request->given == true) && (shared_folder == NULL))
+  {
+    event_log_error (hashcat_ctx, "hashcat_session_init_folders() needs a shared folder.");
+
+    return -1;
+  }
 
   /**
    * There's some buggy OpenCL runtime that do not support -I.
@@ -390,7 +570,12 @@ int folder_config_init (hashcat_ctx_t *hashcat_ctx, MAYBE_UNUSED const char *ins
   char *session_dir = NULL;
   char *shared_dir  = NULL;
 
-  if (strcmp (install_dir, resolved_install_folder) == 0)
+  // A program that named its folders with hashcat_session_init_folders () gets the layout of an
+  // installed hashcat wherever it runs from, and its own profile folder if it named one.
+
+  const bool installed = ((folder_request->given == true) || (strcmp (install_dir, resolved_install_folder) == 0));
+
+  if (installed == true)
   {
     struct passwd pw;
     struct passwd *pwp = NULL;
@@ -408,9 +593,40 @@ int folder_config_init (hashcat_ctx_t *hashcat_ctx, MAYBE_UNUSED const char *ins
     cache_dir   = (char *) hcmalloc (HCBUFSIZ_TINY);
     session_dir = (char *) hcmalloc (HCBUFSIZ_TINY);
 
-    get_profile_dir (profile_dir, home_dir);
+    if (folder_request->profile_folder != NULL)
+    {
+      snprintf (profile_dir, HCBUFSIZ_TINY, "%s", folder_request->profile_folder);
+    }
+    else
+    {
+      get_profile_dir (profile_dir, home_dir);
+    }
+
     get_cache_dir   (cache_dir,   home_dir);
     get_session_dir (session_dir, profile_dir);
+
+    // $HOME/.hashcat predates XDG support and used to win over it whenever it existed. It no longer
+    // does, so anyone who still has one has just had their potfile, sessions and kernel cache move.
+    //
+    // Nothing is copied or deleted, because guessing which of two potfiles a user wants is not a
+    // decision this should make silently. Say where things are now and let them move what they want.
+    // A program with a profile folder of its own never kept anything there.
+
+    char legacy_dir[HCBUFSIZ_TINY];
+
+    snprintf (legacy_dir, sizeof (legacy_dir), "%s/%s", home_dir, DOT_HASHCAT);
+
+    if ((folder_request->profile_folder == NULL) && (hc_path_is_directory (legacy_dir) == true))
+    {
+      event_log_warning (hashcat_ctx, "Found %s, which hashcat no longer uses.", legacy_dir);
+      event_log_warning (hashcat_ctx, "It is left untouched. Everything hashcat keeps per user is now in");
+      event_log_warning (hashcat_ctx, "  %s", profile_dir);
+      event_log_warning (hashcat_ctx, "and the files it rebuilds by itself, the compiled kernels among them, are under");
+      event_log_warning (hashcat_ctx, "  %s", cache_dir);
+      event_log_warning (hashcat_ctx, "That is potfiles and sessions, and anything else you were asked to put there.");
+      event_log_warning (hashcat_ctx, "Move what you still want across, then delete the old directory.");
+      event_log_warning (hashcat_ctx, NULL);
+    }
 
     shared_dir = hcstrdup (shared_folder);
 
@@ -439,6 +655,23 @@ int folder_config_init (hashcat_ctx_t *hashcat_ctx, MAYBE_UNUSED const char *ins
   char *cache_dir   = install_dir;
   char *session_dir = install_dir;
   char *shared_dir  = install_dir;
+
+  // Windows keeps everything in one folder. A program that named its folders gets its profile folder
+  // for that, or the shared folder when it named none, and the shared files from the shared folder.
+  // Each is its own allocation, which is what folder_config_destroy () expects of a folder that is
+  // not install_dir.
+
+  if (folder_request->given == true)
+  {
+    const char *profile_folder = (folder_request->profile_folder != NULL) ? folder_request->profile_folder : shared_folder;
+
+    profile_dir = hcstrdup (profile_folder);
+    cache_dir   = hcstrdup (profile_folder);
+    session_dir = hcstrdup (profile_folder);
+    shared_dir  = hcstrdup (shared_folder);
+
+    hc_mkdir_rec (profile_dir, 0700);
+  }
 
   #endif
 
@@ -534,6 +767,40 @@ int folder_config_init (hashcat_ctx_t *hashcat_ctx, MAYBE_UNUSED const char *ins
   #endif
 
   /**
+   * everything hashcat can rebuild lives under one folder, and --cache-path moves the lot
+   */
+
+  char *cache_root = NULL;
+
+  if (user_options->cache_path != NULL)
+  {
+    // The user named this directory, so it is taken as given rather than extended. Startup has
+    // already checked that it is there, and creating it here would turn a typo into a directory.
+
+    cache_root = hcstrdup (user_options->cache_path);
+  }
+  else
+  {
+    hc_asprintf (&cache_root, "%s/%s", cache_dir, CACHE_FOLDER);
+
+    hc_mkdir_rec (cache_root, 0700);
+  }
+
+  // A name that could not be built leaves the directory as it was rather than a NULL every path below
+  // would be written against.
+  //
+  // cache_dir is its own allocation here whenever it is not still install_dir under another name.
+  // Replacing it with cache_root without freeing that allocation first would leak it, and freeing it
+  // when it is install_dir would free memory the struct still needs later.
+
+  if (cache_root != NULL)
+  {
+    if (cache_dir != install_dir) hcfree (cache_dir);
+
+    cache_dir = cache_root;
+  }
+
+  /**
    * kernel cache, we need to make sure folder exist
    */
 
@@ -560,15 +827,49 @@ int folder_config_init (hashcat_ctx_t *hashcat_ctx, MAYBE_UNUSED const char *ins
   return 0;
 }
 
+void folder_request_init (hashcat_ctx_t *hashcat_ctx, const char *profile_folder)
+{
+  folder_request_t *folder_request = &hashcat_ctx->folder_config->request;
+
+  folder_request->given          = true;
+  folder_request->profile_folder = (profile_folder != NULL) ? hcstrdup (profile_folder) : NULL;
+}
+
+void folder_request_destroy (hashcat_ctx_t *hashcat_ctx)
+{
+  folder_request_t *folder_request = &hashcat_ctx->folder_config->request;
+
+  hcfree (folder_request->profile_folder);
+
+  memset (folder_request, 0, sizeof (folder_request_t));
+}
+
 void folder_config_destroy (hashcat_ctx_t *hashcat_ctx)
 {
   folder_config_t *folder_config = hashcat_ctx->folder_config;
 
   hcfree (folder_config->cpath_real);
   hcfree (folder_config->cwd);
+
+  // cache_dir is always its own allocation now, where it used to be install_dir under another name.
+
+  if (folder_config->cache_dir != folder_config->install_dir) hcfree (folder_config->cache_dir);
+
+  // profile_dir, session_dir and shared_dir are each their own allocation when the running binary
+  // is in the install folder, and install_dir under another name everywhere else, same as cache_dir
+  // used to be.
+
+  if (folder_config->profile_dir != folder_config->install_dir) hcfree (folder_config->profile_dir);
+  if (folder_config->session_dir != folder_config->install_dir) hcfree (folder_config->session_dir);
+  if (folder_config->shared_dir  != folder_config->install_dir) hcfree (folder_config->shared_dir);
+
   hcfree (folder_config->install_dir);
 
+  const folder_request_t request = folder_config->request;
+
   memset (folder_config, 0, sizeof (folder_config_t));
+
+  folder_config->request = request;
 }
 
 int hc_mkdir (const char *name, MAYBE_UNUSED const int mode)
@@ -582,21 +883,27 @@ int hc_mkdir (const char *name, MAYBE_UNUSED const int mode)
 
 int hc_mkdir_rec (const char *path, MAYBE_UNUSED const int mode)
 {
+  if (hc_mkdir (path, mode) == 0) return 0;
+
+  if (errno == EEXIST) return 0;
+
   char *fullpath = hcstrdup (path);
 
   char *subpath = dirname (fullpath);
 
-  if (strlen (subpath) > 1)
+  if (hc_mkdir_rec (subpath, mode) == -1)
   {
-    if (hc_mkdir_rec (subpath, mode) == -1) return -1;
+    hcfree (fullpath);
+
+    return -1;
   }
+
+  hcfree (fullpath);
 
   if (hc_mkdir (path, mode) == -1)
   {
     if (errno != EEXIST) return -1;
   }
-
-  hcfree (fullpath);
 
   return 0;
 }

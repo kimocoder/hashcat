@@ -37,24 +37,8 @@ DECLSPEC void memcat8c_be (PRIVATE_AS u32 *w0, PRIVATE_AS u32 *w1, PRIVATE_AS u3
   u32 tmp0;
   u32 tmp1;
 
-  #if ((defined IS_AMD || defined IS_HIP) && HAS_VPERM == 0) || defined IS_GENERIC
-  tmp0 = hc_bytealign_be (0, append, func_len);
-  tmp1 = hc_bytealign_be (append, 0, func_len);
-  #endif
-
-  #if ((defined IS_AMD || defined IS_HIP) && HAS_VPERM == 1) || defined IS_NV
-
-  #if defined IS_NV
-  const int selector = (0x76543210 >> ((func_len & 3) * 4)) & 0xffff;
-  #endif
-
-  #if (defined IS_AMD || defined IS_HIP)
-  const int selector = l32_from_64_S (0x0706050403020100UL >> ((func_len & 3) * 8));
-  #endif
-
-  tmp0 = hc_byte_perm (append, 0, selector);
-  tmp1 = hc_byte_perm (0, append, selector);
-  #endif
+  tmp0 = hc_bytealign_be_S (0, append, func_len);
+  tmp1 = hc_bytealign_be_S (append, 0, func_len);
 
   u32 carry = 0;
 
@@ -1026,6 +1010,36 @@ KERNEL_FQ KERNEL_FA void m12500_comp (KERN_ATTR_TMPS (rar3_tmp_t))
   u32 ks[44];
 
   AES128_set_decrypt_key (ks, ukey, s_te0, s_te1, s_te2, s_te3, s_td0, s_td1, s_td2, s_td3);
+
+  // a volume line carries the 32 byte end header, whose second block decrypts to zero bytes when
+  // chained to the first, so it needs no IV
+
+  if (salt_bufs[SALT_POS_HOST].salt_len == 40)
+  {
+    u32 data[4];
+
+    data[0] = salt_bufs[SALT_POS_HOST].salt_buf[6];
+    data[1] = salt_bufs[SALT_POS_HOST].salt_buf[7];
+    data[2] = salt_bufs[SALT_POS_HOST].salt_buf[8];
+    data[3] = salt_bufs[SALT_POS_HOST].salt_buf[9];
+
+    u32 out[4];
+
+    AES128_decrypt (ks, data, out, s_td0, s_td1, s_td2, s_td3, s_td4);
+
+    const u32 r0 = out[0] ^ salt_bufs[SALT_POS_HOST].salt_buf[2];
+    const u32 r1 = out[1] ^ salt_bufs[SALT_POS_HOST].salt_buf[3];
+    const u32 r2 = out[2] ^ salt_bufs[SALT_POS_HOST].salt_buf[4];
+    const u32 r3 = out[3] ^ salt_bufs[SALT_POS_HOST].salt_buf[5];
+
+    #define il_pos 0
+
+    #ifdef KERNEL_STATIC
+    #include COMPARE_M
+    #endif
+
+    return;
+  }
 
   u32 data[4];
 

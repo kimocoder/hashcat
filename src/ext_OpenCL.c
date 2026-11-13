@@ -221,6 +221,8 @@ int ocl_init (void *hashcat_ctx)
   HC_LOAD_FUNC (ocl, clReleaseKernel,           OCL_CLRELEASEKERNEL,            OpenCL, 1);
   HC_LOAD_FUNC (ocl, clReleaseMemObject,        OCL_CLRELEASEMEMOBJECT,         OpenCL, 1);
   HC_LOAD_FUNC (ocl, clReleaseProgram,          OCL_CLRELEASEPROGRAM,           OpenCL, 1);
+  HC_LOAD_FUNC (ocl, clRetainContext,           OCL_CLRETAINCONTEXT,            OpenCL, 1);
+  HC_LOAD_FUNC (ocl, clRetainProgram,           OCL_CLRETAINPROGRAM,            OpenCL, 1);
   HC_LOAD_FUNC (ocl, clSetKernelArg,            OCL_CLSETKERNELARG,             OpenCL, 1);
   HC_LOAD_FUNC (ocl, clWaitForEvents,           OCL_CLWAITFOREVENTS,            OpenCL, 1);
   HC_LOAD_FUNC (ocl, clGetEventProfilingInfo,   OCL_CLGETEVENTPROFILINGINFO,    OpenCL, 1);
@@ -247,6 +249,45 @@ void ocl_close (void *hashcat_ctx)
 
     backend_ctx->ocl = NULL;
   }
+}
+
+int hc_clReleaseMemObjectPtr (void *hashcat_ctx, cl_mem *mem)
+{
+  int rc = -1;
+
+  if (mem == NULL || *mem == NULL) return rc;
+
+  rc = hc_clReleaseMemObject (hashcat_ctx, *mem);
+
+  *mem = NULL;
+
+  return rc;
+}
+
+int hc_clReleaseKernelPtr (void *hashcat_ctx, cl_kernel *kernel)
+{
+  int rc = -1;
+
+  if (kernel == NULL || *kernel == NULL) return rc;
+
+  rc = hc_clReleaseKernel (hashcat_ctx, *kernel);
+
+  *kernel = NULL;
+
+  return rc;
+}
+
+int hc_clReleaseProgramPtr (void *hashcat_ctx, cl_program *program)
+{
+  int rc = -1;
+
+  if (program == NULL || *program == NULL) return rc;
+
+  rc = hc_clReleaseProgram (hashcat_ctx, *program);
+
+  *program = NULL;
+
+  return rc;
 }
 
 int hc_clEnqueueNDRangeKernel (void *hashcat_ctx, cl_command_queue command_queue, cl_kernel kernel, cl_uint work_dim, const size_t *global_work_offset, const size_t *global_work_size, const size_t *local_work_size, cl_uint num_events_in_wait_list, const cl_event *event_wait_list, cl_event *event)
@@ -527,6 +568,20 @@ int hc_clCreateCommandQueue (void *hashcat_ctx, cl_context context, cl_device_id
   return 0;
 }
 
+// extended version of hc_clCreateBuffer
+
+int hc_clCreateBuffer_ext (void *hashcat_ctx, cl_context context, cl_mem_flags flags, size_t size, void *host_ptr, cl_mem *mem)
+{
+  if (host_ptr != NULL)
+  {
+    // using unified memory
+
+    flags |= CL_MEM_USE_HOST_PTR;
+  }
+
+  return hc_clCreateBuffer (hashcat_ctx, context, flags, size, host_ptr, mem);
+}
+
 int hc_clCreateBuffer (void *hashcat_ctx, cl_context context, cl_mem_flags flags, size_t size, void *host_ptr, cl_mem *mem)
 {
   backend_ctx_t *backend_ctx = ((hashcat_ctx_t *) hashcat_ctx)->backend_ctx;
@@ -746,6 +801,42 @@ int hc_clReleaseContext (void *hashcat_ctx, cl_context context)
   if (CL_err != CL_SUCCESS)
   {
     event_log_error (hashcat_ctx, "clReleaseContext(): %s", val2cstr_cl (CL_err));
+
+    return -1;
+  }
+
+  return 0;
+}
+
+int hc_clRetainProgram (void *hashcat_ctx, cl_program program)
+{
+  backend_ctx_t *backend_ctx = ((hashcat_ctx_t *) hashcat_ctx)->backend_ctx;
+
+  OCL_PTR *ocl = (OCL_PTR *) backend_ctx->ocl;
+
+  const cl_int CL_err = ocl->clRetainProgram (program);
+
+  if (CL_err != CL_SUCCESS)
+  {
+    event_log_error (hashcat_ctx, "clRetainProgram(): %s", val2cstr_cl (CL_err));
+
+    return -1;
+  }
+
+  return 0;
+}
+
+int hc_clRetainContext (void *hashcat_ctx, cl_context context)
+{
+  backend_ctx_t *backend_ctx = ((hashcat_ctx_t *) hashcat_ctx)->backend_ctx;
+
+  OCL_PTR *ocl = (OCL_PTR *) backend_ctx->ocl;
+
+  const cl_int CL_err = ocl->clRetainContext (context);
+
+  if (CL_err != CL_SUCCESS)
+  {
+    event_log_error (hashcat_ctx, "clRetainContext(): %s", val2cstr_cl (CL_err));
 
     return -1;
   }

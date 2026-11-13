@@ -35,6 +35,7 @@ int get_runtime_left (const hashcat_ctx_t *hashcat_ctx)
   const int runtime_left = (int) (status_ctx->runtime_start
                                 + user_options->runtime
                                 + (msec_paused / 1000)
+                                + status_ctx->runtime_adjust_sec
                                 - runtime_cur);
 
   return runtime_left;
@@ -51,19 +52,26 @@ static int monitor (hashcat_ctx_t *hashcat_ctx)
   user_options_t *user_options  = hashcat_ctx->user_options;
 
   bool runtime_check      = false;
+  bool bypass_eta_check   = false;
   bool remove_check       = false;
   bool status_check       = false;
   bool restore_check      = false;
   bool hwmon_check        = false;
   bool performance_check  = false;
+  bool performance_warned = false;
 
   const int    sleep_time = 1;
-  const double exec_low   = 50.0;  // in ms
+  const double exec_low   = 25.0;  // in ms
   const double util_low   = 90.0;  // in percent
 
   if (user_options->runtime)
   {
     runtime_check = true;
+  }
+
+  if (user_options->bypass_eta_chgd == true)
+  {
+    bypass_eta_check = true;
   }
 
   if (restore_ctx->enabled == true)
@@ -85,6 +93,21 @@ static int monitor (hashcat_ctx_t *hashcat_ctx)
   {
     hwmon_check = true;
   }
+  else
+  {
+    // hwmon_ctx->enabled says a GPU vendor library loaded. A bridge reports its units' sensors
+    // without one, and a machine whose real compute is a bridge device may well have none, so the
+    // watchdog would never run on exactly the hardware that needs watching.
+
+    for (int backend_devices_idx = 0; backend_devices_idx < backend_ctx->backend_devices_cnt; backend_devices_idx++)
+    {
+      if (hm_bridge_owns_device (hashcat_ctx, backend_devices_idx) == false) continue;
+
+      hwmon_check = true;
+
+      break;
+    }
+  }
 
   if (hwmon_ctx->enabled == true)
   {
@@ -94,7 +117,16 @@ static int monitor (hashcat_ctx_t *hashcat_ctx)
     }
   }
 
-  if ((runtime_check == false) && (remove_check == false) && (status_check == false) && (restore_check == false) && (hwmon_check == false) && (performance_check == false))
+  // The curve of what is left against what has been spent is sampled on this thread's tick, because
+  // it is the only thing that ticks whether or not anyone is watching the status. A run with a single
+  // digest has no curve to speak of and no line to print it on, which is the same condition the
+  // Recovered/Time line is printed under.
+
+  bool curve_check = false;
+
+  if (hashes->digests_cnt > 1) curve_check = true;
+
+  if ((runtime_check == false) && (remove_check == false) && (status_check == false) && (restore_check == false) && (hwmon_check == false) && (performance_check == false) && (bypass_eta_check == false) && (curve_check == false))
   {
     return 0;
   }
@@ -104,19 +136,53 @@ static int monitor (hashcat_ctx_t *hashcat_ctx)
   u32 slowdown_warnings    = 0;
   u32 performance_warnings = 0;
 
+  // The feeder abort is one shot. Aborting does not stop the monitor, it asks the session to wind
+  // down, and a bridge batch can run for seconds after that, which is long enough for another tick to
+  // measure the same still-hot GPU and say so again. The per device aborts below get away without
+  // this only because their kernels finish sooner.
+
+  bool feeder_aborted = false;
+
+  bool stdin_overrun_warned = false;
+
   u32 restore_left  = user_options->restore_timer;
   u32 remove_left   = user_options->remove_timer;
   u32 status_left   = user_options->status_timer;
 
+  // A long --status-timer leaves the screen empty for that long, and a run reading from stdin has
+  // no key to ask for a status. So the first one comes as soon as the attack has a speed to show,
+  // and the timer counts from there.
+
+  bool status_first = true;
+
   while (status_ctx->shutdown_inner == false)
   {
-    sleep (sleep_time);
+    // the loop body below counts iterations as seconds, so the cadence stays one second. Only the
+    // waiting is broken up, so a quit is noticed in 100ms instead of up to a full second.
+
+    for (u32 slice = 0; slice < sleep_time * 10; slice++)
+    {
+      if (status_ctx->shutdown_inner == true) break;
+
+      usleep (100000);
+    }
+
+    if (status_ctx->shutdown_inner == true) break;
 
     if (status_ctx->devices_status == STATUS_INIT) continue;
 
-    if (hwmon_ctx->enabled == true)
+    if (curve_check == true)
+    {
+      if (status_ctx->devices_status == STATUS_RUNNING) status_curve_sample (hashcat_ctx);
+    }
+
+    if (hwmon_check == true)
     {
       hc_thread_mutex_lock (status_ctx->mux_hwmon);
+
+      // The candidate generator, found during the sweep below and measured once after it.
+
+      int feeder_idx = -1;
 
       for (int backend_devices_idx = 0; backend_devices_idx < backend_ctx->backend_devices_cnt; backend_devices_idx++)
       {
@@ -124,19 +190,61 @@ static int monitor (hashcat_ctx_t *hashcat_ctx)
 
         if (device_param->skipped == true) continue;
 
-        if ((backend_ctx->devices_param[backend_devices_idx].opencl_device_type & CL_DEVICE_TYPE_GPU) == 0) continue;
+        // The GPU test guards the vendor sensor path, where a CPU's reading is not something to end
+        // a run over. A bridge unit is a different case: it is the hardware doing the work, and its
+        // reading comes from the bridge, so it is watched whatever the backend feeder device is.
+
+        const bool bridge_owns = hm_bridge_owns_device (hashcat_ctx, backend_devices_idx);
+        const bool is_gpu      = ((device_param->opencl_device_type & CL_DEVICE_TYPE_GPU) != 0);
+
+        if ((bridge_owns == false) && (is_gpu == false)) continue;
+
+        // Zero means the user asked for no temperature abort at all, and it arrives here from three
+        // places: --hwmon-temp-abort 0, --hwmon-disable, and benchmark mode. A bridge unit's own
+        // limit REFINES that setting, it does not outrank it, so no unit is consulted while the
+        // abort is off. Checked before the sensor is read, because that reading has no other use and
+        // on some hardware it is a USB round trip every second.
+
+        if (user_options->hwmon_temp_abort == 0) continue;
 
         const int temperature = hm_get_temperature_with_devices_idx (hashcat_ctx, backend_devices_idx);
 
-        if (temperature > (int) user_options->hwmon_temp_abort)
+        // A bridge unit may carry its own limit. The default is a GPU number, and a unit that is not
+        // a GPU has no reason to inherit it.
+        //
+        // The STRICTER of the two wins, which needs no way of telling a typed 90 from the default 90.
+        // Letting the unit limit win outright was wrong in one direction: a user asking for 60 on a
+        // box with a unit rated 75 was given 75, so a deliberately cautious setting was ignored on
+        // exactly the hardware doing the work. It stays right in the other direction, where a user
+        // asking for 100 still does not get to run a part past what it survives.
+
+        const u32 temp_abort_unit = hm_get_bridge_temperature_abort (hashcat_ctx, backend_devices_idx);
+
+        const u32 temp_abort = (temp_abort_unit > 0) ? MIN (temp_abort_unit, user_options->hwmon_temp_abort) : user_options->hwmon_temp_abort;
+
+        if (temperature > (int) temp_abort)
         {
-          EVENT_DATA (EVENT_MONITOR_TEMP_ABORT, &backend_devices_idx, sizeof (int));
+          if (bridge_owns == true)
+          {
+            EVENT_DATA (EVENT_MONITOR_TEMP_ABORT_BRIDGE, &backend_devices_idx, sizeof (int));
+          }
+          else
+          {
+            EVENT_DATA (EVENT_MONITOR_TEMP_ABORT, &backend_devices_idx, sizeof (int));
+          }
 
           myabort (hashcat_ctx);
         }
+
+        // Under a bridge the reading above describes the UNIT, so the device that generated the
+        // candidates for it has been measured by nobody. Remember one of them and measure it AFTER
+        // this loop: every bridge unit is a virtual clone of the same physical device, so checking it
+        // here would test one GPU once per unit and abort once per unit for a single overheating card.
+
+        if ((bridge_owns == true) && (feeder_idx == -1)) feeder_idx = backend_devices_idx;
         #if defined (__APPLE__)
         // experimental feature, check the "Sensor Graphic Hot" sensor through IOKIT/SMC to catch a GPU overtemp alarm
-        else if (temperature > (int) (user_options->hwmon_temp_abort - 10))
+        else if ((bridge_owns == false) && (temperature > (int) (temp_abort - 10)))
         {
           if (hm_IOKIT_SMCGetSensorGraphicHot (hashcat_ctx) == 1)
           {
@@ -150,12 +258,40 @@ static int monitor (hashcat_ctx_t *hashcat_ctx)
         #endif
       }
 
+      // The candidate generator, once per tick and not once per unit. It is a GPU running flat out,
+      // and under a bridge nothing else measures it: every reading taken through a bridge unit
+      // describes the unit. The user's own limit applies, because this really is a GPU and that is
+      // the number the default was chosen for.
+
+      if ((feeder_idx >= 0) && (user_options->hwmon_temp_abort > 0) && (feeder_aborted == false))
+      {
+        const int feeder_temperature = hm_get_device_temperature (hashcat_ctx, feeder_idx);
+
+        if (feeder_temperature > (int) user_options->hwmon_temp_abort)
+        {
+          feeder_aborted = true;
+
+          EVENT_DATA (EVENT_MONITOR_TEMP_ABORT_FEEDER, &feeder_idx, sizeof (int));
+
+          myabort (hashcat_ctx);
+        }
+      }
+
       for (int backend_devices_idx = 0; backend_devices_idx < backend_ctx->backend_devices_cnt; backend_devices_idx++)
       {
         hc_device_param_t *device_param = &backend_ctx->devices_param[backend_devices_idx];
 
         if (device_param->skipped == true) continue;
         if (device_param->skipped_warning == true) continue;
+
+        // One physical card can appear as many devices, as bridge units or under
+        // --backend-devices-virtmulti, and throttling is a property of the card. Counting it once per
+        // clone drove slowdown_warnings past all three thresholds inside a single tick, so the three
+        // warnings fired together instead of over three sustained ticks, and the decrement below
+        // cleared the counter just as fast. Only the device carrying the hwmon line for that hardware
+        // is asked.
+
+        if (hm_is_hwmon_group_leader (hashcat_ctx, backend_devices_idx) == false) continue;
 
         const int rc_throttle = hm_get_throttle_with_devices_idx (hashcat_ctx, backend_devices_idx);
 
@@ -233,9 +369,25 @@ static int monitor (hashcat_ctx_t *hashcat_ctx)
       }
     }
 
+    // --stdin-count check
+
+    if ((stdin_overrun_warned == false) && (status_get_stdin_count_exceeded (hashcat_ctx) == true))
+    {
+      stdin_overrun_warned = true;
+
+      EVENT_DATA (EVENT_MONITOR_STDIN_OVERRUN, NULL, 0);
+    }
+
     if (status_check == true)
     {
       status_left--;
+
+      if ((status_first == true) && (status_ctx->devices_status == STATUS_RUNNING) && (status_get_hashes_msec_all (hashcat_ctx) > 0))
+      {
+        status_first = false;
+
+        status_left = 0;
+      }
 
       if (status_left == 0)
       {
@@ -246,10 +398,12 @@ static int monitor (hashcat_ctx_t *hashcat_ctx)
         hc_thread_mutex_unlock (status_ctx->mux_display);
 
         status_left = user_options->status_timer;
+
+        status_first = false;
       }
     }
 
-    if (performance_check == true)
+    if (performance_check == true && status_ctx->devices_status == STATUS_RUNNING && performance_warned == false)
     {
       int exec_cnt = 0;
       int util_cnt = 0;
@@ -289,27 +443,35 @@ static int monitor (hashcat_ctx_t *hashcat_ctx)
       if (exec_cnt > 0) exec_avg = exec_total / exec_cnt;
       if (util_cnt > 0) util_avg = util_total / util_cnt;
 
-      if ((exec_avg > 0) && (exec_avg < exec_low))
+      if (((exec_avg > 0) && (exec_avg < exec_low)) || ((util_avg > 0) && (util_avg < util_low)))
       {
         performance_warnings++;
-
-        if (performance_warnings == 10) EVENT_DATA (EVENT_MONITOR_PERFORMANCE_HINT, NULL, 0);
+      }
+      else
+      {
+        if (performance_warnings > 0)
+        {
+          performance_warnings--;
+        }
       }
 
-      if ((util_avg > 0) && (util_avg < util_low))
+      if (performance_warnings == 10)
       {
-        performance_warnings++;
-
-        if (performance_warnings == 10) EVENT_DATA (EVENT_MONITOR_PERFORMANCE_HINT, NULL, 0);
+        performance_warned = true;
+        EVENT_DATA (EVENT_MONITOR_PERFORMANCE_HINT, NULL, 0);
       }
     }
 
     // stdin read timeout check
     // note: we skip the stdin timeout check if it was disabled with stdin_timeout_abort set to 0
 
+    // Without --stdin-timeout-flush nothing is cracked until a batch is full, so a pipe that never
+    // started and one that is only slow differ in their progress. With it the words that came are
+    // cracked as they come, and only the idle count can decide.
+
     if (user_options->stdin_timeout_abort != 0)
     {
-      if (status_get_progress_done (hashcat_ctx) == 0)
+      if ((status_get_progress_done (hashcat_ctx) == 0) || (user_options->stdin_timeout_flush > 0))
       {
         if (status_ctx->stdin_read_timeout_cnt > 0)
         {
@@ -331,6 +493,72 @@ static int monitor (hashcat_ctx_t *hashcat_ctx)
         }
       }
     }
+
+    if (user_options->bypass_delay_chgd == true)
+    {
+      time (&status_ctx->timer_bypass_cur);
+
+      if (status_ctx->devices_status == STATUS_RUNNING)
+      {
+        // --bypass-delay check
+        if ((status_ctx->timer_bypass_cur - status_ctx->timer_bypass_start) >= user_options->bypass_delay)
+        {
+          time (&status_ctx->timer_bypass_start);
+
+          // --bypass-threshold check
+          if ((u32)(hashcat_ctx->hashes->digests_done_new - status_ctx->bypass_digests_done_new) < user_options->bypass_threshold)
+          {
+            event_log_info (hashcat_ctx, NULL);
+            event_log_info (hashcat_ctx, NULL);
+
+            bypass (hashcat_ctx);
+
+            event_log_info (hashcat_ctx, "Bypass threshold reached! Next dictionary / mask in queue selected. Bypassing current one.");
+
+            event_log_info (hashcat_ctx, NULL);
+            status_ctx->bypass_digests_done_new = 0;
+          }
+          else
+          {
+              // enough recovered to continue the session
+              status_ctx->bypass_digests_done_new = hashcat_ctx->hashes->digests_done_new;
+          }
+        }
+      }
+      else if (status_ctx->devices_status == STATUS_PAUSED)
+      {
+        status_ctx->timer_bypass_start += 1;
+      }
+    }
+
+    // --bypass-eta decides once per queue item, when the restore point first moves. Before that the
+    // speed is still settling, and the estimate is not one to drop a whole mask or wordlist over.
+
+    if ((bypass_eta_check == true) && (status_ctx->bypass_eta_checked == false) && (status_ctx->devices_status == STATUS_RUNNING) && (status_ctx->words_cur > status_ctx->bypass_eta_words_from))
+    {
+      status_ctx->bypass_eta_checked = true;
+
+      const time_t sec_etc = status_get_sec_etc (hashcat_ctx);
+
+      if (sec_etc > (time_t) user_options->bypass_eta)
+      {
+        event_log_info (hashcat_ctx, NULL);
+        event_log_info (hashcat_ctx, NULL);
+
+        bypass (hashcat_ctx);
+
+        event_log_info (hashcat_ctx, "Estimated time left is above --bypass-eta. Next dictionary / mask in queue selected. Bypassing current one.");
+
+        event_log_info (hashcat_ctx, NULL);
+      }
+    }
+  }
+
+  // final round of the --stdin-count check, for a pipe that passed it after the last tick
+
+  if ((stdin_overrun_warned == false) && (status_get_stdin_count_exceeded (hashcat_ctx) == true))
+  {
+    EVENT_DATA (EVENT_MONITOR_STDIN_OVERRUN, NULL, 0);
   }
 
   // final round of save_hash
@@ -367,11 +595,11 @@ static int monitor (hashcat_ctx_t *hashcat_ctx)
   return 0;
 }
 
-HC_API_CALL void *thread_monitor (void *p)
+HC_THREAD_FUNC thread_monitor (void *p)
 {
   hashcat_ctx_t *hashcat_ctx = (hashcat_ctx_t *) p;
 
   monitor (hashcat_ctx); // we should give back some useful returncode
 
-  return NULL;
+  return 0;
 }

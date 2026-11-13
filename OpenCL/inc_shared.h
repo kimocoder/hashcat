@@ -63,4 +63,6 @@
 
 #endif // IS_METAL
 
+DECLSPEC void gpu_decompress_entry (GLOBAL_AS pw_idx_t *pws_idx, GLOBAL_AS u32 *pws_comp, PRIVATE_AS pw_t *buf, const u64 gid);
+
 #endif // INC_SHARED_H

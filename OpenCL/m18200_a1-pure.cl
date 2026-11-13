@@ -18,12 +18,14 @@
 
 typedef struct krb5asrep
 {
-  u32 account_info[512];
+  u32 raw_token[512];
   u32 checksum[4];
   u32 edata2[5120];
   u32 edata2_len;
   u32 format;
 
+  u32 user[128];
+  u32 realm[128];
 } krb5asrep_t;
 
 DECLSPEC int decrypt_and_check (LOCAL_AS u32 *S, PRIVATE_AS u32 *data, GLOBAL_AS const u32 *edata2, const u32 edata2_len, PRIVATE_AS const u32 *K2, PRIVATE_AS const u32 *checksum, const u64 lid)
@@ -49,8 +51,10 @@ DECLSPEC int decrypt_and_check (LOCAL_AS u32 *S, PRIVATE_AS u32 *data, GLOBAL_AS
   rc4_next_16_global (S, 0, 0, edata2 + 0, out0, lid);
 
   if (((out0[2] & 0x00ff80ff) != 0x00300079) &&
+      ((out0[2] & 0x00ff80ff) != 0x0030007a) &&
       ((out0[2] & 0xFF00FFFF) != 0x30008179) &&
-      ((out0[2] & 0x0000FFFF) != 0x00008279 || (out0[3] & 0x000000FF) != 0x00000030))
+      ((out0[2] & 0xFF00FFFF) != 0x3000817a) &&
+      (((out0[2] & 0x0000FFFF) != 0x00008279 && (out0[2] & 0x0000FFFF) != 0x0000827a) || (out0[3] & 0x000000FF) != 0x00000030))
       return 0;
 
   rc4_init_128 (S, data, lid);
@@ -290,6 +294,12 @@ KERNEL_FQ KERNEL_FA void m18200_mxx (KERN_ATTR_ESALT (krb5asrep_t))
 
   md4_init (&ctx0);
 
+  // -a 12 may put a piece of mask in front of the base word, and the context below can then not
+  // be reused. This is the same context one update earlier, so whatever went in before the base
+  // word still goes in only once.
+
+  md4_ctx_t ctx0_pre = ctx0;
+
   md4_update_global_utf16le (&ctx0, pws[gid].i, pws[gid].pw_len);
 
   /**
@@ -298,9 +308,46 @@ KERNEL_FQ KERNEL_FA void m18200_mxx (KERN_ATTR_ESALT (krb5asrep_t))
 
   for (u32 il_pos = 0; il_pos < IL_CNT; il_pos++)
   {
-    md4_ctx_t ctx = ctx0;
+    md4_ctx_t ctx;
 
-    md4_update_global_utf16le (&ctx, combs_buf[il_pos].i, combs_buf[il_pos].pw_len);
+    // -a 1 may choose the larger wordlist as the base word source, which puts the amplifier word in
+    // front of the base word (BASE_RIGHT). The context that already absorbed the base word cannot be
+    // reused for that, so start from the pre-base context, feed the amplifier, then the base word.
+
+    if (COMBS_MODE == COMBINATOR_MODE_BASE_RIGHT)
+    {
+      ctx = ctx0_pre;
+
+      md4_update_global_utf16le (&ctx, COMBS_POST (il_pos).i, COMBS_POST (il_pos).pw_len);
+      md4_update_global_utf16le (&ctx, pws[gid].i, pws[gid].pw_len);
+    }
+    else
+    {
+      ctx = ctx0;
+
+      // -a 12 puts the base word inside the amplifier instead of beside it, so a candidate is five
+      // pieces: mask, base word, mask, second word, mask. Any of them may be empty, and the two in the
+      // middle are empty unless the mask carries a ?q.
+      //
+      // Every thread reads the same il_pos, so the branches below are uniform across the warp and the
+      // attack modes that do not take them pay nothing but the compare.
+
+      if (COMBS_IS_MIDDLE)
+      {
+        if (COMBS_PRE (il_pos).pw_len > 0)
+        {
+          ctx = ctx0_pre;
+
+          md4_update_global_utf16le (&ctx, COMBS_PRE (il_pos).i, COMBS_PRE (il_pos).pw_len);
+          md4_update_global_utf16le (&ctx, pws[gid].i, pws[gid].pw_len);
+        }
+
+        if (COMBS_MID  (il_pos).pw_len > 0) md4_update_global_utf16le (&ctx, COMBS_MID  (il_pos).i, COMBS_MID  (il_pos).pw_len);
+        if (COMBS_WORD (il_pos).pw_len > 0) md4_update_global_utf16le (&ctx, COMBS_WORD (il_pos).i, COMBS_WORD (il_pos).pw_len);
+      }
+
+      md4_update_global_utf16le (&ctx, COMBS_POST (il_pos).i, COMBS_POST (il_pos).pw_len);
+    }
 
     md4_final (&ctx);
 
@@ -348,6 +395,12 @@ KERNEL_FQ KERNEL_FA void m18200_sxx (KERN_ATTR_ESALT (krb5asrep_t))
 
   md4_init (&ctx0);
 
+  // -a 12 may put a piece of mask in front of the base word, and the context below can then not
+  // be reused. This is the same context one update earlier, so whatever went in before the base
+  // word still goes in only once.
+
+  md4_ctx_t ctx0_pre = ctx0;
+
   md4_update_global_utf16le (&ctx0, pws[gid].i, pws[gid].pw_len);
 
   /**
@@ -356,9 +409,46 @@ KERNEL_FQ KERNEL_FA void m18200_sxx (KERN_ATTR_ESALT (krb5asrep_t))
 
   for (u32 il_pos = 0; il_pos < IL_CNT; il_pos++)
   {
-    md4_ctx_t ctx = ctx0;
+    md4_ctx_t ctx;
 
-    md4_update_global_utf16le (&ctx, combs_buf[il_pos].i, combs_buf[il_pos].pw_len);
+    // -a 1 may choose the larger wordlist as the base word source, which puts the amplifier word in
+    // front of the base word (BASE_RIGHT). The context that already absorbed the base word cannot be
+    // reused for that, so start from the pre-base context, feed the amplifier, then the base word.
+
+    if (COMBS_MODE == COMBINATOR_MODE_BASE_RIGHT)
+    {
+      ctx = ctx0_pre;
+
+      md4_update_global_utf16le (&ctx, COMBS_POST (il_pos).i, COMBS_POST (il_pos).pw_len);
+      md4_update_global_utf16le (&ctx, pws[gid].i, pws[gid].pw_len);
+    }
+    else
+    {
+      ctx = ctx0;
+
+      // -a 12 puts the base word inside the amplifier instead of beside it, so a candidate is five
+      // pieces: mask, base word, mask, second word, mask. Any of them may be empty, and the two in the
+      // middle are empty unless the mask carries a ?q.
+      //
+      // Every thread reads the same il_pos, so the branches below are uniform across the warp and the
+      // attack modes that do not take them pay nothing but the compare.
+
+      if (COMBS_IS_MIDDLE)
+      {
+        if (COMBS_PRE (il_pos).pw_len > 0)
+        {
+          ctx = ctx0_pre;
+
+          md4_update_global_utf16le (&ctx, COMBS_PRE (il_pos).i, COMBS_PRE (il_pos).pw_len);
+          md4_update_global_utf16le (&ctx, pws[gid].i, pws[gid].pw_len);
+        }
+
+        if (COMBS_MID  (il_pos).pw_len > 0) md4_update_global_utf16le (&ctx, COMBS_MID  (il_pos).i, COMBS_MID  (il_pos).pw_len);
+        if (COMBS_WORD (il_pos).pw_len > 0) md4_update_global_utf16le (&ctx, COMBS_WORD (il_pos).i, COMBS_WORD (il_pos).pw_len);
+      }
+
+      md4_update_global_utf16le (&ctx, COMBS_POST (il_pos).i, COMBS_POST (il_pos).pw_len);
+    }
 
     md4_final (&ctx);
 

@@ -1,4 +1,3 @@
-
 /**
  * Author......: Netherlands Forensic Institute
  * License.....: MIT
@@ -12,7 +11,10 @@
 #define ARGON2_VERSION_10 0x10
 #define ARGON2_VERSION_13 0x13
 
+#ifndef THREADS_PER_LANE
 #define THREADS_PER_LANE 32
+#endif
+
 #define FULL_MASK 0xffffffff
 
 #define BLAKE2B_OUTBYTES 64
@@ -23,84 +25,25 @@
 #define TYPE_I  1
 #define TYPE_ID 2
 
-#if defined IS_CUDA
-#define hc__shfl_sync(shfbuf,mask,var,srcLane,argon2_thread,argon2_lsz) __shfl_sync ((mask),(var),(srcLane))
-#elif defined IS_HIP
-// attention hard coded 32 warps for hip here
-#define hc__shfl_sync(shfbuf,mask,var,srcLane,argon2_thread,argon2_lsz) __shfl ((var),(srcLane),32)
-#elif defined IS_OPENCL
-#define hc__shfl_sync(shfbuf,mask,var,srcLane,argon2_thread,argon2_lsz) hc__shfl ((shfbuf),(var),(srcLane),(argon2_thread),(argon2_lsz))
+// The lane exchange moved to inc_platform.h so every kernel that needs one gets the same
+// implementation. mask is dropped on the way: the platform version always takes the whole
+// wave, which is what every call here passed anyway.
 
-#if defined IS_AMD && defined IS_GPU
-DECLSPEC u64 hc__shfl (MAYBE_UNUSED LOCAL_AS u64 *shuffle_buf, const u64 var, const int src_lane, const u32 argon2_thread, const u32 argon2_lsz)
-{
-  const u32 idx = src_lane << 2;
+#define hc__shfl_sync(shfbuf,mask,var,srcLane,argon2_thread,argon2_lsz) hc_shfl_u64 ((shfbuf), (var), (srcLane), (argon2_thread), (argon2_lsz))
 
-  const u32 l32 = l32_from_64_S (var);
-  const u32 h32 = h32_from_64_S (var);
-
-  const u32 l32r = __builtin_amdgcn_ds_bpermute (idx, l32);
-  const u32 h32r = __builtin_amdgcn_ds_bpermute (idx, h32);
-
-  const u64 out = hl32_to_64_S (h32r, l32r);
-
-  return out;
-}
-#elif defined IS_NV && defined IS_GPU
-DECLSPEC u64 hc__shfl (MAYBE_UNUSED LOCAL_AS u64 *shuffle_buf, const u64 var, const int src_lane, const u32 argon2_thread, const u32 argon2_lsz)
-{
-  const u32 l32 = l32_from_64_S (var);
-  const u32 h32 = h32_from_64_S (var);
-
-  u32 l32r;
-  u32 h32r;
-
-  asm("shfl.sync.idx.b32 %0, %1, %2, 0x1f, 0;"
-      : "=r"(l32r)
-      : "r"(l32), "r"(src_lane));
-
-  asm("shfl.sync.idx.b32 %0, %1, %2, 0x1f, 0;"
-      : "=r"(h32r)
-      : "r"(h32), "r"(src_lane));
-
-  const u64 out = hl32_to_64_S (h32r, l32r);
-
-  return out;
+#ifdef IS_CPU
+#define ARGON2_G(a,b,c,d)                \
+{                                        \
+  a = a + b + 2 * trunc_mul(a, b);       \
+  d = hc_rotr64_S (d ^ a, 32);           \
+  c = c + d + 2 * trunc_mul(c, d);       \
+  b = hc_rotr64_S (b ^ c, 24);           \
+  a = a + b + 2 * trunc_mul(a, b);       \
+  d = hc_rotr64_S (d ^ a, 16);           \
+  c = c + d + 2 * trunc_mul(c, d);       \
+  b = hc_rotr64_S (b ^ c, 63);           \
 }
 #else
-DECLSPEC u64 hc__shfl (MAYBE_UNUSED LOCAL_AS u64 *shuffle_buf, const u64 var, const int src_lane, const u32 argon2_thread, const u32 argon2_lsz)
-{
-  shuffle_buf[argon2_thread] = var;
-
-  barrier (CLK_LOCAL_MEM_FENCE);
-
-  const u64 out = shuffle_buf[src_lane & (argon2_lsz - 1)];
-
-  barrier (CLK_LOCAL_MEM_FENCE);
-
-  return out;
-}
-#endif
-
-#elif defined IS_METAL
-#define hc__shfl_sync(shfbuf,mask,var,srcLane,argon2_thread,argon2_lsz) simd_shuffle_64 ((var),(srcLane),(argon2_lsz))
-
-DECLSPEC u64 simd_shuffle_64 (const u64 var, const int src_lane, const u32 argon2_lsz)
-{
-  const u32 idx = src_lane & (argon2_lsz - 1);
-
-  const u32 l32 = l32_from_64_S (var);
-  const u32 h32 = h32_from_64_S (var);
-
-  u32 l32r = simd_shuffle (l32, idx);
-  u32 h32r = simd_shuffle (h32, idx);
-
-  const u64 out = hl32_to_64_S (h32r, l32r);
-
-  return out;
-}
-#endif
-
 #define ARGON2_G(a,b,c,d)                \
 {                                        \
   a = a + b + 2 * trunc_mul(a, b);       \
@@ -112,6 +55,7 @@ DECLSPEC u64 simd_shuffle_64 (const u64 var, const int src_lane, const u32 argon
   c = c + d + 2 * trunc_mul(c, d);       \
   b = hc_rotr64_S (b ^ c, 63);           \
 }
+#endif
 
 #define ARGON2_P()                       \
 {                                        \
@@ -156,7 +100,13 @@ typedef struct argon2_pos
 
 } argon2_pos_t;
 
-DECLSPEC void argon2_init (GLOBAL_AS const pw_t *pw, GLOBAL_AS const salt_t *salt, PRIVATE_AS const argon2_options_t *options, GLOBAL_AS argon2_block_t *out);
+DECLSPEC void argon2_init_pp (PRIVATE_AS const pw_t *pw, PRIVATE_AS const salt_t *salt, PRIVATE_AS const argon2_options_t *options, GLOBAL_AS argon2_block_t *out);
+DECLSPEC void argon2_init_pg (PRIVATE_AS const pw_t *pw, GLOBAL_AS  const salt_t *salt, PRIVATE_AS const argon2_options_t *options, GLOBAL_AS argon2_block_t *out);
+DECLSPEC void argon2_init_gp (GLOBAL_AS  const pw_t *pw, PRIVATE_AS const salt_t *salt, PRIVATE_AS const argon2_options_t *options, GLOBAL_AS argon2_block_t *out);
+DECLSPEC void argon2_init_gg (GLOBAL_AS  const pw_t *pw, GLOBAL_AS  const salt_t *salt, PRIVATE_AS const argon2_options_t *options, GLOBAL_AS argon2_block_t *out);
+
+DECLSPEC void argon2_init_main (PRIVATE_AS const u32 *pw_buf, const int pw_len, PRIVATE_AS const u32 *salt_buf, const int salt_len, PRIVATE_AS const argon2_options_t *options, GLOBAL_AS argon2_block_t *out);
+DECLSPEC u32 argon2_lane_limit (const u32 parallelism, const u32 rows);
 DECLSPEC void argon2_fill_segment (GLOBAL_AS argon2_block_t *blocks, PRIVATE_AS const argon2_options_t *options, PRIVATE_AS const argon2_pos_t *pos, LOCAL_AS u64 *shuffle_buf, const u32 argon2_thread, const u32 argon2_lsz);
 DECLSPEC void argon2_final (GLOBAL_AS argon2_block_t *blocks, PRIVATE_AS const argon2_options_t *options, PRIVATE_AS u32 *out);
 DECLSPEC GLOBAL_AS argon2_block_t *get_argon2_block (PRIVATE_AS const argon2_options_t *options, GLOBAL_AS void *buf, const int idx);

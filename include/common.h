@@ -6,6 +6,8 @@
 #ifndef HC_COMMON_H
 #define HC_COMMON_H
 
+#include "export.h"
+
 #define PROGNAME "hashcat"
 
 #if defined (__unix__) || defined (__APPLE__)
@@ -61,6 +63,21 @@
 #define HC_API_CALL __stdcall
 #else
 #define HC_API_CALL
+#endif
+
+// A thread entry point, written with the return type each platform's thread API actually asks for.
+// CreateThread () wants a DWORD back and pthread_create () wants a void *, and an entry point written
+// for one and handed to the other is undefined behaviour that happens to work: on 64 bit Windows the
+// pointer it returns is 8 bytes where the caller reads 4. Spelling the entry points this way is what
+// lets hc_thread_create () pass a function straight through, with no cast to hide the mismatch.
+//
+// DWORD is spelled out rather than named, because this header is included long before windows.h and
+// the two are the same type: unsigned long, which Win64 keeps at 32 bits.
+
+#if defined (_WIN)
+#define HC_THREAD_FUNC HC_API_CALL unsigned long
+#else
+#define HC_THREAD_FUNC HC_API_CALL void *
 #endif
 
 #if defined (__GNUC__)
@@ -129,7 +146,20 @@ but this is needed for VS compiler which doesn't have inline keyword but has __i
 #define HCBUFSIZ_SMALL      0x2000
 #define HCBUFSIZ_LARGE      0x1000000
 
-#define CPT_CACHE           0x20000
+// One slot per second of the longest window the status view reports over. The history used to hold
+// one entry per cracking batch, which a run that cracks in more batches than it has slots overwrites,
+// and the hour and day counts then read low. A second is the finest the timestamps carry, so a slot
+// per second is the most history there is to keep.
+
+#define CPT_SECONDS         (60 * 60 * 24)
+
+// How many points of the curve of recovered digests against candidates spent are kept. One point
+// per tick until this fills, then every second point, which doubles the spacing and leaves the span
+// and the shape intact. It is a memory bound and nothing else: how much data the fit needs, which
+// floor it settles on and whether either answer is worth printing all come out of the scatter of
+// the points about the line.
+
+#define CURVE_SAMPLES       256
 #define PARAMCNT            64
 #define DEVICES_MAX         256
 #define EXEC_CACHE          128
@@ -143,5 +173,24 @@ but this is needed for VS compiler which doesn't have inline keyword but has __i
 #define EOL "\n"
 #endif
 
+
+// One spelling of getpid () for both platforms, used where a file needs a name no other process on
+// the host will pick.
+
+#if defined (_WIN)
+#define HC_GETPID _getpid
+#else
+#define HC_GETPID getpid
+#endif
+
 #endif // HC_COMMON_H
 
+
+#define USAGE_NOTICE_NUM_ROUNDS "rounds=[# of iterations] is optional here, after signature, e.g. $5$rounds=5000"
+#define USAGE_NOTICE_ITUNES_BACKUP "You can use https://github.com/philsmd/itunes_backup2hashcat/ to extract the hashes from the Manifest.plist file"
+#define USAGE_NOTICE_GPG "You can use https://github.com/pwrbob/pgp2hc or the older https://github.com/openwall/john/blob/bleeding-jumbo/src/gpg2john.c to extract the hashes"
+#define USAGE_NOTICE_LUKS "You can use https://github.com/hashcat/hashcat/blob/master/tools/luks2hashcat.py to extract the hashes"
+#define USAGE_NOTICE_TRUECRYPT "You can use https://github.com/hashcat/hashcat/blob/master/tools/truecrypt2hashcat.py to extract the hashes"
+#define USAGE_NOTICE_VERACRYPT "You can use https://github.com/hashcat/hashcat/blob/master/tools/veracrypt2hashcat.py to extract the hashes"
+#define USAGE_NOTICE_OFFICE "You can use https://github.com/openwall/john/blob/bleeding-jumbo/run/office2john.py to extract the hash. It prints the file name and a colon in front of the hash, so drop everything up to and including that first ':'."
+#define USAGE_NOTICE_PDF "You can use https://github.com/sighook/pdf2hashcat to extract the hashes"

@@ -18,9 +18,9 @@
 typedef struct krb5tgs_17
 {
   u32 user[128];
-  u32 domain[128];
-  u32 account_info[512];
-  u32 account_info_len;
+  u32 realm[128];
+  u32 kdc_salt[256];
+  u32 kdc_salt_len;
 
   u32 checksum[3];
   u32 edata2[5120];
@@ -32,8 +32,8 @@ typedef struct krb5tgs_17_tmp
 {
   u32 ipad[5];
   u32 opad[5];
-  u32 dgst[10];
-  u32 out[10];
+  u32 dgst[5];
+  u32 out[5];
 
 } krb5tgs_17_tmp_t;
 
@@ -41,27 +41,17 @@ DECLSPEC void aes128_encrypt_cbc (PRIVATE_AS const u32 *aes_ks, PRIVATE_AS u32 *
 {
   u32 data[4];
 
-  data[0] = hc_swap32_S (in[0]);
-  data[1] = hc_swap32_S (in[1]);
-  data[2] = hc_swap32_S (in[2]);
-  data[3] = hc_swap32_S (in[3]);
+  data[0] = in[0] ^ aes_iv[0];
+  data[1] = in[1] ^ aes_iv[1];
+  data[2] = in[2] ^ aes_iv[2];
+  data[3] = in[3] ^ aes_iv[3];
 
-  data[0] ^= aes_iv[0];
-  data[1] ^= aes_iv[1];
-  data[2] ^= aes_iv[2];
-  data[3] ^= aes_iv[3];
-
-  aes128_encrypt (aes_ks, data, out, s_te0, s_te1, s_te2, s_te3, s_te4);
+  AES128_encrypt (aes_ks, data, out, s_te0, s_te1, s_te2, s_te3, s_te4);
 
   aes_iv[0] = out[0];
   aes_iv[1] = out[1];
   aes_iv[2] = out[2];
   aes_iv[3] = out[3];
-
-  out[0] = hc_swap32_S (out[0]);
-  out[1] = hc_swap32_S (out[1]);
-  out[2] = hc_swap32_S (out[2]);
-  out[3] = hc_swap32_S (out[3]);
 }
 
 DECLSPEC void aes128_decrypt_cbc (PRIVATE_AS const u32 *ks1, PRIVATE_AS const u32 *in, PRIVATE_AS u32 *out, PRIVATE_AS u32 *essiv, SHM_TYPE u32 *s_td0, SHM_TYPE u32 *s_td1, SHM_TYPE u32 *s_td2, SHM_TYPE u32 *s_td3, SHM_TYPE u32 *s_td4)
@@ -147,7 +137,7 @@ KERNEL_FQ KERNEL_FA void m19600_init (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
   tmps[gid].opad[3] = sha1_hmac_ctx.opad.h[3];
   tmps[gid].opad[4] = sha1_hmac_ctx.opad.h[4];
 
-  sha1_hmac_update_global_swap (&sha1_hmac_ctx, esalt_bufs[DIGESTS_OFFSET_HOST].account_info, esalt_bufs[DIGESTS_OFFSET_HOST].account_info_len);
+  sha1_hmac_update_global_swap (&sha1_hmac_ctx, esalt_bufs[DIGESTS_OFFSET_HOST].kdc_salt, esalt_bufs[DIGESTS_OFFSET_HOST].kdc_salt_len);
 
  for (u32 i = 0, j = 1; i < 4; i += 5, j += 1)
   {
@@ -344,6 +334,9 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
 
   if (gid >= GID_CNT) return;
 
+  const u32 digest_pos = LOOP_POS;
+  const u32 digest_cur = DIGESTS_OFFSET_HOST + digest_pos;
+
   /*
     at this point, the output ('seed') will be used to generate AES keys:
 
@@ -365,10 +358,10 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
   // then aes_cbc encrypt this nfolded value with 'seed' as key along with a null IV
   u32 aes_key[4];
 
-  aes_key[0] = hc_swap32_S (tmps[gid].out[0]);
-  aes_key[1] = hc_swap32_S (tmps[gid].out[1]);
-  aes_key[2] = hc_swap32_S (tmps[gid].out[2]);
-  aes_key[3] = hc_swap32_S (tmps[gid].out[3]);
+  aes_key[0] = tmps[gid].out[0];
+  aes_key[1] = tmps[gid].out[1];
+  aes_key[2] = tmps[gid].out[2];
+  aes_key[3] = tmps[gid].out[3];
 
   u32 aes_iv[4];
 
@@ -379,7 +372,7 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
 
   u32 aes_ks[44];
 
-  aes128_set_encrypt_key (aes_ks, aes_key, s_te0, s_te1, s_te2, s_te3);
+  AES128_set_encrypt_key (aes_ks, aes_key, s_te0, s_te1, s_te2, s_te3);
 
   u32 key_bytes[4];
 
@@ -388,11 +381,6 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
   /* we will now compute 'ki', having 'key_bytes' */
 
   u32 ki[4];
-
-  key_bytes[0] = hc_swap32_S (key_bytes[0]);
-  key_bytes[1] = hc_swap32_S (key_bytes[1]);
-  key_bytes[2] = hc_swap32_S (key_bytes[2]);
-  key_bytes[3] = hc_swap32_S (key_bytes[3]);
 
   // we can precompute _nfold(pack('>IB', 2, 0x55), 16)
   nfolded[0] = 0x62dc6e37;
@@ -406,7 +394,7 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
   aes_iv[3] = 0;
 
   // then aes_cbc encrypt this nfolded value with 'key_bytes' as key along with a null IV
-  aes128_set_encrypt_key (aes_ks, key_bytes, s_te0, s_te1, s_te2, s_te3);
+  AES128_set_encrypt_key (aes_ks, key_bytes, s_te0, s_te1, s_te2, s_te3);
 
   aes128_encrypt_cbc (aes_ks, aes_iv, nfolded, ki, s_te0, s_te1, s_te2, s_te3, s_te4);
 
@@ -446,29 +434,29 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
 
   u32 decrypted_block[4];
 
-  first_blocks[0] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[0];
-  first_blocks[1] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[1];
-  first_blocks[2] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[2];
-  first_blocks[3] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[3];
+  first_blocks[0] = esalt_bufs[digest_cur].edata2[0];
+  first_blocks[1] = esalt_bufs[digest_cur].edata2[1];
+  first_blocks[2] = esalt_bufs[digest_cur].edata2[2];
+  first_blocks[3] = esalt_bufs[digest_cur].edata2[3];
 
-  first_blocks[4] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[4]; // possible ASN1 structs
-  first_blocks[5] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[5];
-  first_blocks[6] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[6]; // possible ASN1 structs
-  first_blocks[7] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[7];
+  first_blocks[4] = esalt_bufs[digest_cur].edata2[4]; // possible ASN1 structs
+  first_blocks[5] = esalt_bufs[digest_cur].edata2[5];
+  first_blocks[6] = esalt_bufs[digest_cur].edata2[6]; // possible ASN1 structs
+  first_blocks[7] = esalt_bufs[digest_cur].edata2[7];
 
   /*
      we will decrypt them here in order to be able to compute hmac directly
      if ASN1 structs were to be found
   */
-  first_blocks[8]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[8];
-  first_blocks[9]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[9];
-  first_blocks[10] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[10];
-  first_blocks[11] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[11];
+  first_blocks[8]  = esalt_bufs[digest_cur].edata2[8];
+  first_blocks[9]  = esalt_bufs[digest_cur].edata2[9];
+  first_blocks[10] = esalt_bufs[digest_cur].edata2[10];
+  first_blocks[11] = esalt_bufs[digest_cur].edata2[11];
 
-  first_blocks[12] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[12];
-  first_blocks[13] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[13];
-  first_blocks[14] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[14];
-  first_blocks[15] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[15];
+  first_blocks[12] = esalt_bufs[digest_cur].edata2[12];
+  first_blocks[13] = esalt_bufs[digest_cur].edata2[13];
+  first_blocks[14] = esalt_bufs[digest_cur].edata2[14];
+  first_blocks[15] = esalt_bufs[digest_cur].edata2[15];
 
   u32 w0[4];
   u32 w1[4];
@@ -505,7 +493,7 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
       // now we decrypt all the ticket to verify checksum
       int block_position;
 
-      int edata2_len = esalt_bufs[DIGESTS_OFFSET_HOST].edata2_len;
+      int edata2_len = esalt_bufs[digest_cur].edata2_len;
 
       int edata2_left;
 
@@ -580,22 +568,22 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
       // first 4 blocks are already decrypted
       for (edata2_left = need - 64; edata2_left >= 64; edata2_left -= 64)
       {
-        block[0]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  0];
-        block[1]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  1];
-        block[2]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  2];
-        block[3]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  3];
-        block[4]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  4];
-        block[5]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  5];
-        block[6]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  6];
-        block[7]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  7];
-        block[8]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  8];
-        block[9]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  9];
-        block[10] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 10];
-        block[11] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 11];
-        block[12] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 12];
-        block[13] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 13];
-        block[14] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 14];
-        block[15] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 15];
+        block[0]  = esalt_bufs[digest_cur].edata2[block_position +  0];
+        block[1]  = esalt_bufs[digest_cur].edata2[block_position +  1];
+        block[2]  = esalt_bufs[digest_cur].edata2[block_position +  2];
+        block[3]  = esalt_bufs[digest_cur].edata2[block_position +  3];
+        block[4]  = esalt_bufs[digest_cur].edata2[block_position +  4];
+        block[5]  = esalt_bufs[digest_cur].edata2[block_position +  5];
+        block[6]  = esalt_bufs[digest_cur].edata2[block_position +  6];
+        block[7]  = esalt_bufs[digest_cur].edata2[block_position +  7];
+        block[8]  = esalt_bufs[digest_cur].edata2[block_position +  8];
+        block[9]  = esalt_bufs[digest_cur].edata2[block_position +  9];
+        block[10] = esalt_bufs[digest_cur].edata2[block_position + 10];
+        block[11] = esalt_bufs[digest_cur].edata2[block_position + 11];
+        block[12] = esalt_bufs[digest_cur].edata2[block_position + 12];
+        block[13] = esalt_bufs[digest_cur].edata2[block_position + 13];
+        block[14] = esalt_bufs[digest_cur].edata2[block_position + 14];
+        block[15] = esalt_bufs[digest_cur].edata2[block_position + 15];
 
         aes128_decrypt_cbc (aes_cts_decrypt_ks, block, decrypted_block, aes_iv, s_td0, s_td1, s_td2, s_td3, s_td4);
 
@@ -632,10 +620,10 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
 
       if (edata2_left == 16)
       {
-        block[0] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 0];
-        block[1] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 1];
-        block[2] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 2];
-        block[3] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 3];
+        block[0] = esalt_bufs[digest_cur].edata2[block_position + 0];
+        block[1] = esalt_bufs[digest_cur].edata2[block_position + 1];
+        block[2] = esalt_bufs[digest_cur].edata2[block_position + 2];
+        block[3] = esalt_bufs[digest_cur].edata2[block_position + 3];
 
         aes128_decrypt_cbc (aes_cts_decrypt_ks, block, decrypted_block, aes_iv, s_td0, s_td1, s_td2, s_td3, s_td4);
 
@@ -665,14 +653,14 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
       }
       else if (edata2_left == 32)
       {
-        block[0] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 0];
-        block[1] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 1];
-        block[2] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 2];
-        block[3] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 3];
-        block[4] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 4];
-        block[5] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 5];
-        block[6] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 6];
-        block[7] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 7];
+        block[0] = esalt_bufs[digest_cur].edata2[block_position + 0];
+        block[1] = esalt_bufs[digest_cur].edata2[block_position + 1];
+        block[2] = esalt_bufs[digest_cur].edata2[block_position + 2];
+        block[3] = esalt_bufs[digest_cur].edata2[block_position + 3];
+        block[4] = esalt_bufs[digest_cur].edata2[block_position + 4];
+        block[5] = esalt_bufs[digest_cur].edata2[block_position + 5];
+        block[6] = esalt_bufs[digest_cur].edata2[block_position + 6];
+        block[7] = esalt_bufs[digest_cur].edata2[block_position + 7];
 
         aes128_decrypt_cbc (aes_cts_decrypt_ks, block, decrypted_block, aes_iv, s_td0, s_td1, s_td2, s_td3, s_td4);
 
@@ -704,18 +692,18 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
       }
       else if (edata2_left == 48)
       {
-        block[0]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  0];
-        block[1]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  1];
-        block[2]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  2];
-        block[3]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  3];
-        block[4]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  4];
-        block[5]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  5];
-        block[6]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  6];
-        block[7]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  7];
-        block[8]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  8];
-        block[9]  = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position +  9];
-        block[10] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 10];
-        block[11] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 11];
+        block[0]  = esalt_bufs[digest_cur].edata2[block_position +  0];
+        block[1]  = esalt_bufs[digest_cur].edata2[block_position +  1];
+        block[2]  = esalt_bufs[digest_cur].edata2[block_position +  2];
+        block[3]  = esalt_bufs[digest_cur].edata2[block_position +  3];
+        block[4]  = esalt_bufs[digest_cur].edata2[block_position +  4];
+        block[5]  = esalt_bufs[digest_cur].edata2[block_position +  5];
+        block[6]  = esalt_bufs[digest_cur].edata2[block_position +  6];
+        block[7]  = esalt_bufs[digest_cur].edata2[block_position +  7];
+        block[8]  = esalt_bufs[digest_cur].edata2[block_position +  8];
+        block[9]  = esalt_bufs[digest_cur].edata2[block_position +  9];
+        block[10] = esalt_bufs[digest_cur].edata2[block_position + 10];
+        block[11] = esalt_bufs[digest_cur].edata2[block_position + 11];
 
         aes128_decrypt_cbc (aes_cts_decrypt_ks, block, decrypted_block, aes_iv, s_td0, s_td1, s_td2, s_td3, s_td4);
 
@@ -756,16 +744,16 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
       // this is block n-2, it will be xored with the n-1 block later crafted
       u32 last_block_cbc[4];
 
-      last_block_cbc[0] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_cbc_position + 0];
-      last_block_cbc[1] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_cbc_position + 1];
-      last_block_cbc[2] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_cbc_position + 2];
-      last_block_cbc[3] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_cbc_position + 3];
+      last_block_cbc[0] = esalt_bufs[digest_cur].edata2[last_block_cbc_position + 0];
+      last_block_cbc[1] = esalt_bufs[digest_cur].edata2[last_block_cbc_position + 1];
+      last_block_cbc[2] = esalt_bufs[digest_cur].edata2[last_block_cbc_position + 2];
+      last_block_cbc[3] = esalt_bufs[digest_cur].edata2[last_block_cbc_position + 3];
 
       // n-1 block is decrypted separately from the previous blocks which were cbc decrypted
-      block[0] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 0];
-      block[1] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 1];
-      block[2] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 2];
-      block[3] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[block_position + 3];
+      block[0] = esalt_bufs[digest_cur].edata2[block_position + 0];
+      block[1] = esalt_bufs[digest_cur].edata2[block_position + 1];
+      block[2] = esalt_bufs[digest_cur].edata2[block_position + 2];
+      block[3] = esalt_bufs[digest_cur].edata2[block_position + 3];
 
       aes128_decrypt (aes_cts_decrypt_ks, block, decrypted_block, s_td0, s_td1, s_td2, s_td3, s_td4);
 
@@ -806,7 +794,7 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
       {
         case 0:
 
-          last_block[0] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_position + 0];
+          last_block[0] = esalt_bufs[digest_cur].edata2[last_block_position + 0];
 
           mask = (0xffffffff >> ((4 - last_block_size) * 8));
 
@@ -821,7 +809,7 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
 
         case 1:
 
-          last_block[0] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_position + 0];
+          last_block[0] = esalt_bufs[digest_cur].edata2[last_block_position + 0];
 
           if (shift == 0)
           {
@@ -835,7 +823,7 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
           }
           else
           {
-            last_block[1] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_position + 1];
+            last_block[1] = esalt_bufs[digest_cur].edata2[last_block_position + 1];
 
             mask = (0xffffffff >> ((4 - (last_block_size % 4)) * 8));
 
@@ -854,8 +842,8 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
 
         case 2:
 
-          last_block[0] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_position + 0];
-          last_block[1] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_position + 1];
+          last_block[0] = esalt_bufs[digest_cur].edata2[last_block_position + 0];
+          last_block[1] = esalt_bufs[digest_cur].edata2[last_block_position + 1];
 
           if (shift == 0)
           {
@@ -872,7 +860,7 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
           }
           else
           {
-            last_block[2] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_position + 2];
+            last_block[2] = esalt_bufs[digest_cur].edata2[last_block_position + 2];
 
             mask = (0xffffffff >> ((4 - (last_block_size % 4)) * 8));
 
@@ -893,9 +881,9 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
 
         case 3:
 
-          last_block[0] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_position + 0];
-          last_block[1] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_position + 1];
-          last_block[2] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_position + 2];
+          last_block[0] = esalt_bufs[digest_cur].edata2[last_block_position + 0];
+          last_block[1] = esalt_bufs[digest_cur].edata2[last_block_position + 1];
+          last_block[2] = esalt_bufs[digest_cur].edata2[last_block_position + 2];
 
           if (shift == 0)
           {
@@ -914,7 +902,7 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
           }
           else
           {
-            last_block[3] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_position + 3];
+            last_block[3] = esalt_bufs[digest_cur].edata2[last_block_position + 3];
 
             mask = (0xffffffff >> ((4 - (last_block_size % 4)) * 8));
 
@@ -937,10 +925,10 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
 
         case 4:
 
-          last_block[0] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_position + 0];
-          last_block[1] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_position + 1];
-          last_block[2] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_position + 2];
-          last_block[3] = esalt_bufs[DIGESTS_OFFSET_HOST].edata2[last_block_position + 3];
+          last_block[0] = esalt_bufs[digest_cur].edata2[last_block_position + 0];
+          last_block[1] = esalt_bufs[digest_cur].edata2[last_block_position + 1];
+          last_block[2] = esalt_bufs[digest_cur].edata2[last_block_position + 2];
+          last_block[3] = esalt_bufs[digest_cur].edata2[last_block_position + 3];
 
           n_1_crafted[0] = last_block[0];
           n_1_crafted[1] = last_block[1];
@@ -995,14 +983,14 @@ KERNEL_FQ KERNEL_FA void m19600_comp (KERN_ATTR_TMPS_ESALT (krb5tgs_17_tmp_t, kr
 
       sha1_hmac_final (&sha1_hmac_ctx);
 
-      if (sha1_hmac_ctx.opad.h[0]   == esalt_bufs[DIGESTS_OFFSET_HOST].checksum[0]
-        && sha1_hmac_ctx.opad.h[1] == esalt_bufs[DIGESTS_OFFSET_HOST].checksum[1]
-        && sha1_hmac_ctx.opad.h[2] == esalt_bufs[DIGESTS_OFFSET_HOST].checksum[2])
+      if (sha1_hmac_ctx.opad.h[0]   == esalt_bufs[digest_cur].checksum[0]
+        && sha1_hmac_ctx.opad.h[1] == esalt_bufs[digest_cur].checksum[1]
+        && sha1_hmac_ctx.opad.h[2] == esalt_bufs[digest_cur].checksum[2])
       {
-        if (hc_atomic_inc (&hashes_shown[DIGESTS_OFFSET_HOST]) == 0)
+        if (hc_atomic_inc (&hashes_shown[digest_cur]) == 0)
         {
           #define il_pos 0
-          mark_hash (plains_buf, d_return_buf, SALT_POS_HOST, DIGESTS_CNT, 0, DIGESTS_OFFSET_HOST + 0, gid, il_pos, 0, 0);
+          mark_hash (plains_buf, d_return_buf, SALT_POS_HOST, DIGESTS_CNT, digest_pos, digest_cur, gid, il_pos, 0, 0);
         }
       }
     }

@@ -86,16 +86,20 @@ KERNEL_FQ KERNEL_FA void m07800_m04 (KERN_ATTR_BASIC ())
    * salt
    */
 
-  u32 salt_buf[8];
+  u32 salt_buf[12];
 
-  salt_buf[0] = salt_bufs[SALT_POS_HOST].salt_buf[0];
-  salt_buf[1] = salt_bufs[SALT_POS_HOST].salt_buf[1];
-  salt_buf[2] = salt_bufs[SALT_POS_HOST].salt_buf[2];
-  salt_buf[3] = salt_bufs[SALT_POS_HOST].salt_buf[3];
-  salt_buf[4] = salt_bufs[SALT_POS_HOST].salt_buf[4];
-  salt_buf[5] = salt_bufs[SALT_POS_HOST].salt_buf[5];
-  salt_buf[6] = salt_bufs[SALT_POS_HOST].salt_buf[6];
-  salt_buf[7] = salt_bufs[SALT_POS_HOST].salt_buf[7];
+  salt_buf[ 0] = salt_bufs[SALT_POS_HOST].salt_buf[ 0];
+  salt_buf[ 1] = salt_bufs[SALT_POS_HOST].salt_buf[ 1];
+  salt_buf[ 2] = salt_bufs[SALT_POS_HOST].salt_buf[ 2];
+  salt_buf[ 3] = salt_bufs[SALT_POS_HOST].salt_buf[ 3];
+  salt_buf[ 4] = salt_bufs[SALT_POS_HOST].salt_buf[ 4];
+  salt_buf[ 5] = salt_bufs[SALT_POS_HOST].salt_buf[ 5];
+  salt_buf[ 6] = salt_bufs[SALT_POS_HOST].salt_buf[ 6];
+  salt_buf[ 7] = salt_bufs[SALT_POS_HOST].salt_buf[ 7];
+  salt_buf[ 8] = salt_bufs[SALT_POS_HOST].salt_buf[ 8];
+  salt_buf[ 9] = salt_bufs[SALT_POS_HOST].salt_buf[ 9];
+  salt_buf[10] = salt_bufs[SALT_POS_HOST].salt_buf[10];
+  salt_buf[11] = salt_bufs[SALT_POS_HOST].salt_buf[11];
 
   const u32 salt_len = salt_bufs[SALT_POS_HOST].salt_len;
 
@@ -105,7 +109,7 @@ KERNEL_FQ KERNEL_FA void m07800_m04 (KERN_ATTR_BASIC ())
 
   for (u32 il_pos = 0; il_pos < IL_CNT; il_pos += VECT_SIZE)
   {
-    const u32x pw_r_len = pwlenx_create_combt (combs_buf, il_pos) & 63;
+    const u32x pw_r_len = COMBS_PW_R_LEN (il_pos) & 63;
 
     const u32x pw_len = (pw_l_len + pw_r_len) & 63;
 
@@ -132,22 +136,67 @@ KERNEL_FQ KERNEL_FA void m07800_m04 (KERN_ATTR_BASIC ())
     u32x wordr2[4] = { 0 };
     u32x wordr3[4] = { 0 };
 
-    wordr0[0] = ix_create_combt (combs_buf, il_pos, 0);
-    wordr0[1] = ix_create_combt (combs_buf, il_pos, 1);
-    wordr0[2] = ix_create_combt (combs_buf, il_pos, 2);
-    wordr0[3] = ix_create_combt (combs_buf, il_pos, 3);
-    wordr1[0] = ix_create_combt (combs_buf, il_pos, 4);
-    wordr1[1] = ix_create_combt (combs_buf, il_pos, 5);
-    wordr1[2] = ix_create_combt (combs_buf, il_pos, 6);
-    wordr1[3] = ix_create_combt (combs_buf, il_pos, 7);
-
-    if (COMBS_MODE == COMBINATOR_MODE_BASE_LEFT)
+    #if ATTACK_MODE == 12
+    if (COMBS_IS_MIDDLE)
     {
-      switch_buffer_by_offset_le_VV (wordr0, wordr1, wordr2, wordr3, pw_l_len);
+      // -a 12 assembles five pieces in these two register sets: mask, base word, mask, second word,
+      // mask. wordl is the accumulator and wordr carries one piece at a time. The piece behind the
+      // last word is left in wordr, because the OR below already folds wordr in.
+      //
+      // Only the second word changes length from one amplifier item to the next. Every other offset
+      // is a property of the mask, so those shifts are by a scalar and cost what the shift by
+      // pw_l_len costs today.
+
+      if (COMBS_PRE_LEN > 0) combs_pre8_VV (combs_buf, il_pos, COMBS_PRE_LEN, wordl0, wordl1, wordl2, wordl3, wordr0, wordr1, wordr2, wordr3);
+
+      u32x comb_off = COMBS_PRE_LEN + pw_l_len;
+
+      if (COMBS_MID_LEN > 0)
+      {
+        combs_piece8_VV (combs_buf, il_pos, COMBS_PIECE_MID, wordr0, wordr1, wordr2, wordr3);
+
+        switch_buffer_by_offset_le_VV (wordr0, wordr1, wordr2, wordr3, comb_off);
+
+        combs_fold_VV (wordl0, wordl1, wordl2, wordl3, wordr0, wordr1, wordr2, wordr3);
+
+        comb_off += COMBS_MID_LEN;
+      }
+
+      if (COMBS_HAS_Q > 0)
+      {
+        combs_piece8_VV (combs_buf, il_pos, COMBS_PIECE_WORD, wordr0, wordr1, wordr2, wordr3);
+
+        switch_buffer_by_offset_le_VV (wordr0, wordr1, wordr2, wordr3, comb_off);
+
+        combs_fold_VV (wordl0, wordl1, wordl2, wordl3, wordr0, wordr1, wordr2, wordr3);
+
+        comb_off += pwlenx_create_combp (combs_buf, il_pos, COMBS_PIECE_WORD);
+      }
+
+      combs_piece8_VV (combs_buf, il_pos, COMBS_PIECE_POST, wordr0, wordr1, wordr2, wordr3);
+
+      if (COMBS_POST_LEN > 0) switch_buffer_by_offset_le_VV (wordr0, wordr1, wordr2, wordr3, comb_off);
     }
     else
+    #endif
     {
-      switch_buffer_by_offset_le_VV (wordl0, wordl1, wordl2, wordl3, pw_r_len);
+      wordr0[0] = ix_create_combt (combs_buf, il_pos, 0);
+      wordr0[1] = ix_create_combt (combs_buf, il_pos, 1);
+      wordr0[2] = ix_create_combt (combs_buf, il_pos, 2);
+      wordr0[3] = ix_create_combt (combs_buf, il_pos, 3);
+      wordr1[0] = ix_create_combt (combs_buf, il_pos, 4);
+      wordr1[1] = ix_create_combt (combs_buf, il_pos, 5);
+      wordr1[2] = ix_create_combt (combs_buf, il_pos, 6);
+      wordr1[3] = ix_create_combt (combs_buf, il_pos, 7);
+
+      if (COMBS_MODE == COMBINATOR_MODE_BASE_LEFT)
+      {
+        switch_buffer_by_offset_le_VV (wordr0, wordr1, wordr2, wordr3, pw_l_len);
+      }
+      else
+      {
+        switch_buffer_by_offset_le_VV (wordl0, wordl1, wordl2, wordl3, pw_r_len);
+      }
     }
 
     u32x w0[4];
@@ -181,18 +230,18 @@ KERNEL_FQ KERNEL_FA void m07800_m04 (KERN_ATTR_BASIC ())
     u32 s2[4];
     u32 s3[4];
 
-    s0[0] = salt_buf[0];
-    s0[1] = salt_buf[1];
-    s0[2] = salt_buf[2];
-    s0[3] = salt_buf[3];
-    s1[0] = salt_buf[4];
-    s1[1] = salt_buf[5];
-    s1[2] = salt_buf[6];
-    s1[3] = salt_buf[7];
-    s2[0] = 0;
-    s2[1] = 0;
-    s2[2] = 0;
-    s2[3] = 0;
+    s0[0] = salt_buf[ 0];
+    s0[1] = salt_buf[ 1];
+    s0[2] = salt_buf[ 2];
+    s0[3] = salt_buf[ 3];
+    s1[0] = salt_buf[ 4];
+    s1[1] = salt_buf[ 5];
+    s1[2] = salt_buf[ 6];
+    s1[3] = salt_buf[ 7];
+    s2[0] = salt_buf[ 8];
+    s2[1] = salt_buf[ 9];
+    s2[2] = salt_buf[10];
+    s2[3] = salt_buf[11];
     s3[0] = 0;
     s3[1] = 0;
     s3[2] = 0;
@@ -206,7 +255,9 @@ KERNEL_FQ KERNEL_FA void m07800_m04 (KERN_ATTR_BASIC ())
      * sha1
      */
 
-    u32 final[32];
+    // SETSHIFTEDINT () below writes into final[] with no bounds check, so it has room for all 4 SHA1
+    // blocks the longest candidate, magic array and salt can need
+    u32 final[64];
 
     final[ 0] = hc_swap32_S (w0[0] | s0[0]);
     final[ 1] = hc_swap32_S (w0[1] | s0[1]);
@@ -302,6 +353,17 @@ KERNEL_FQ KERNEL_FA void m07800_m04 (KERN_ATTR_BASIC ())
     final[14] = 0;
     final[15] = 0;
 
+    // final[] holds up to 4 SHA1 blocks. final[16] to final[31] are still zero from the first block
+    // above, and SETSHIFTEDINT () ORs into zero words, so only the third and fourth block need
+    // zeroing, and only when the data reaches them.
+
+    const u32 n_blocks = ((pw_len + lengthMagicArray + salt_len + 8) / 64) + 1;
+
+    if (n_blocks > 2)
+    {
+      for (u32 j = 32; j < 64; j++) final[j] = 0;
+    }
+
     u32 final_len = pw_len;
 
     u32 i;
@@ -335,8 +397,19 @@ KERNEL_FQ KERNEL_FA void m07800_m04 (KERN_ATTR_BASIC ())
     final_len += salt_len;
 
     // calculate
+    //
+    // final_len reaches up to 188 bytes (pw_max 55, a magic array of up to 82 and salt_max 51),
+    // which is up to 4 SHA1 blocks. Each block count has its own branch, so every index into
+    // final[] stays constant.
 
-    if (final_len >= 56)
+    if (n_blocks == 1)
+    {
+      final[14] = 0;
+      final[15] = final_len * 8;
+
+      sha1_transform (final +  0, final +  4, final +  8, final + 12, digest);
+    }
+    else if (n_blocks == 2)
     {
       final[30] = 0;
       final[31] = final_len * 8;
@@ -344,12 +417,24 @@ KERNEL_FQ KERNEL_FA void m07800_m04 (KERN_ATTR_BASIC ())
       sha1_transform (final +  0, final +  4, final +  8, final + 12, digest);
       sha1_transform (final + 16, final + 20, final + 24, final + 28, digest);
     }
-    else
+    else if (n_blocks == 3)
     {
-      final[14] = 0;
-      final[15] = final_len * 8;
+      final[46] = 0;
+      final[47] = final_len * 8;
 
       sha1_transform (final +  0, final +  4, final +  8, final + 12, digest);
+      sha1_transform (final + 16, final + 20, final + 24, final + 28, digest);
+      sha1_transform (final + 32, final + 36, final + 40, final + 44, digest);
+    }
+    else
+    {
+      final[62] = 0;
+      final[63] = final_len * 8;
+
+      sha1_transform (final +  0, final +  4, final +  8, final + 12, digest);
+      sha1_transform (final + 16, final + 20, final + 24, final + 28, digest);
+      sha1_transform (final + 32, final + 36, final + 40, final + 44, digest);
+      sha1_transform (final + 48, final + 52, final + 56, final + 60, digest);
     }
 
     COMPARE_M_SIMD (digest[3], digest[4], digest[2], digest[1]);
@@ -398,16 +483,20 @@ KERNEL_FQ KERNEL_FA void m07800_s04 (KERN_ATTR_BASIC ())
    * salt
    */
 
-  u32 salt_buf[8];
+  u32 salt_buf[12];
 
-  salt_buf[0] = salt_bufs[SALT_POS_HOST].salt_buf[0];
-  salt_buf[1] = salt_bufs[SALT_POS_HOST].salt_buf[1];
-  salt_buf[2] = salt_bufs[SALT_POS_HOST].salt_buf[2];
-  salt_buf[3] = salt_bufs[SALT_POS_HOST].salt_buf[3];
-  salt_buf[4] = salt_bufs[SALT_POS_HOST].salt_buf[4];
-  salt_buf[5] = salt_bufs[SALT_POS_HOST].salt_buf[5];
-  salt_buf[6] = salt_bufs[SALT_POS_HOST].salt_buf[6];
-  salt_buf[7] = salt_bufs[SALT_POS_HOST].salt_buf[7];
+  salt_buf[ 0] = salt_bufs[SALT_POS_HOST].salt_buf[ 0];
+  salt_buf[ 1] = salt_bufs[SALT_POS_HOST].salt_buf[ 1];
+  salt_buf[ 2] = salt_bufs[SALT_POS_HOST].salt_buf[ 2];
+  salt_buf[ 3] = salt_bufs[SALT_POS_HOST].salt_buf[ 3];
+  salt_buf[ 4] = salt_bufs[SALT_POS_HOST].salt_buf[ 4];
+  salt_buf[ 5] = salt_bufs[SALT_POS_HOST].salt_buf[ 5];
+  salt_buf[ 6] = salt_bufs[SALT_POS_HOST].salt_buf[ 6];
+  salt_buf[ 7] = salt_bufs[SALT_POS_HOST].salt_buf[ 7];
+  salt_buf[ 8] = salt_bufs[SALT_POS_HOST].salt_buf[ 8];
+  salt_buf[ 9] = salt_bufs[SALT_POS_HOST].salt_buf[ 9];
+  salt_buf[10] = salt_bufs[SALT_POS_HOST].salt_buf[10];
+  salt_buf[11] = salt_bufs[SALT_POS_HOST].salt_buf[11];
 
   const u32 salt_len = salt_bufs[SALT_POS_HOST].salt_len;
 
@@ -429,7 +518,7 @@ KERNEL_FQ KERNEL_FA void m07800_s04 (KERN_ATTR_BASIC ())
 
   for (u32 il_pos = 0; il_pos < IL_CNT; il_pos += VECT_SIZE)
   {
-    const u32x pw_r_len = pwlenx_create_combt (combs_buf, il_pos) & 63;
+    const u32x pw_r_len = COMBS_PW_R_LEN (il_pos) & 63;
 
     const u32x pw_len = (pw_l_len + pw_r_len) & 63;
 
@@ -456,22 +545,67 @@ KERNEL_FQ KERNEL_FA void m07800_s04 (KERN_ATTR_BASIC ())
     u32x wordr2[4] = { 0 };
     u32x wordr3[4] = { 0 };
 
-    wordr0[0] = ix_create_combt (combs_buf, il_pos, 0);
-    wordr0[1] = ix_create_combt (combs_buf, il_pos, 1);
-    wordr0[2] = ix_create_combt (combs_buf, il_pos, 2);
-    wordr0[3] = ix_create_combt (combs_buf, il_pos, 3);
-    wordr1[0] = ix_create_combt (combs_buf, il_pos, 4);
-    wordr1[1] = ix_create_combt (combs_buf, il_pos, 5);
-    wordr1[2] = ix_create_combt (combs_buf, il_pos, 6);
-    wordr1[3] = ix_create_combt (combs_buf, il_pos, 7);
-
-    if (COMBS_MODE == COMBINATOR_MODE_BASE_LEFT)
+    #if ATTACK_MODE == 12
+    if (COMBS_IS_MIDDLE)
     {
-      switch_buffer_by_offset_le_VV (wordr0, wordr1, wordr2, wordr3, pw_l_len);
+      // -a 12 assembles five pieces in these two register sets: mask, base word, mask, second word,
+      // mask. wordl is the accumulator and wordr carries one piece at a time. The piece behind the
+      // last word is left in wordr, because the OR below already folds wordr in.
+      //
+      // Only the second word changes length from one amplifier item to the next. Every other offset
+      // is a property of the mask, so those shifts are by a scalar and cost what the shift by
+      // pw_l_len costs today.
+
+      if (COMBS_PRE_LEN > 0) combs_pre8_VV (combs_buf, il_pos, COMBS_PRE_LEN, wordl0, wordl1, wordl2, wordl3, wordr0, wordr1, wordr2, wordr3);
+
+      u32x comb_off = COMBS_PRE_LEN + pw_l_len;
+
+      if (COMBS_MID_LEN > 0)
+      {
+        combs_piece8_VV (combs_buf, il_pos, COMBS_PIECE_MID, wordr0, wordr1, wordr2, wordr3);
+
+        switch_buffer_by_offset_le_VV (wordr0, wordr1, wordr2, wordr3, comb_off);
+
+        combs_fold_VV (wordl0, wordl1, wordl2, wordl3, wordr0, wordr1, wordr2, wordr3);
+
+        comb_off += COMBS_MID_LEN;
+      }
+
+      if (COMBS_HAS_Q > 0)
+      {
+        combs_piece8_VV (combs_buf, il_pos, COMBS_PIECE_WORD, wordr0, wordr1, wordr2, wordr3);
+
+        switch_buffer_by_offset_le_VV (wordr0, wordr1, wordr2, wordr3, comb_off);
+
+        combs_fold_VV (wordl0, wordl1, wordl2, wordl3, wordr0, wordr1, wordr2, wordr3);
+
+        comb_off += pwlenx_create_combp (combs_buf, il_pos, COMBS_PIECE_WORD);
+      }
+
+      combs_piece8_VV (combs_buf, il_pos, COMBS_PIECE_POST, wordr0, wordr1, wordr2, wordr3);
+
+      if (COMBS_POST_LEN > 0) switch_buffer_by_offset_le_VV (wordr0, wordr1, wordr2, wordr3, comb_off);
     }
     else
+    #endif
     {
-      switch_buffer_by_offset_le_VV (wordl0, wordl1, wordl2, wordl3, pw_r_len);
+      wordr0[0] = ix_create_combt (combs_buf, il_pos, 0);
+      wordr0[1] = ix_create_combt (combs_buf, il_pos, 1);
+      wordr0[2] = ix_create_combt (combs_buf, il_pos, 2);
+      wordr0[3] = ix_create_combt (combs_buf, il_pos, 3);
+      wordr1[0] = ix_create_combt (combs_buf, il_pos, 4);
+      wordr1[1] = ix_create_combt (combs_buf, il_pos, 5);
+      wordr1[2] = ix_create_combt (combs_buf, il_pos, 6);
+      wordr1[3] = ix_create_combt (combs_buf, il_pos, 7);
+
+      if (COMBS_MODE == COMBINATOR_MODE_BASE_LEFT)
+      {
+        switch_buffer_by_offset_le_VV (wordr0, wordr1, wordr2, wordr3, pw_l_len);
+      }
+      else
+      {
+        switch_buffer_by_offset_le_VV (wordl0, wordl1, wordl2, wordl3, pw_r_len);
+      }
     }
 
     u32x w0[4];
@@ -505,18 +639,18 @@ KERNEL_FQ KERNEL_FA void m07800_s04 (KERN_ATTR_BASIC ())
     u32 s2[4];
     u32 s3[4];
 
-    s0[0] = salt_buf[0];
-    s0[1] = salt_buf[1];
-    s0[2] = salt_buf[2];
-    s0[3] = salt_buf[3];
-    s1[0] = salt_buf[4];
-    s1[1] = salt_buf[5];
-    s1[2] = salt_buf[6];
-    s1[3] = salt_buf[7];
-    s2[0] = 0;
-    s2[1] = 0;
-    s2[2] = 0;
-    s2[3] = 0;
+    s0[0] = salt_buf[ 0];
+    s0[1] = salt_buf[ 1];
+    s0[2] = salt_buf[ 2];
+    s0[3] = salt_buf[ 3];
+    s1[0] = salt_buf[ 4];
+    s1[1] = salt_buf[ 5];
+    s1[2] = salt_buf[ 6];
+    s1[3] = salt_buf[ 7];
+    s2[0] = salt_buf[ 8];
+    s2[1] = salt_buf[ 9];
+    s2[2] = salt_buf[10];
+    s2[3] = salt_buf[11];
     s3[0] = 0;
     s3[1] = 0;
     s3[2] = 0;
@@ -530,7 +664,9 @@ KERNEL_FQ KERNEL_FA void m07800_s04 (KERN_ATTR_BASIC ())
      * sha1
      */
 
-    u32 final[32];
+    // SETSHIFTEDINT () below writes into final[] with no bounds check, so it has room for all 4 SHA1
+    // blocks the longest candidate, magic array and salt can need
+    u32 final[64];
 
     final[ 0] = hc_swap32_S (w0[0] | s0[0]);
     final[ 1] = hc_swap32_S (w0[1] | s0[1]);
@@ -626,6 +762,17 @@ KERNEL_FQ KERNEL_FA void m07800_s04 (KERN_ATTR_BASIC ())
     final[14] = 0;
     final[15] = 0;
 
+    // final[] holds up to 4 SHA1 blocks. final[16] to final[31] are still zero from the first block
+    // above, and SETSHIFTEDINT () ORs into zero words, so only the third and fourth block need
+    // zeroing, and only when the data reaches them.
+
+    const u32 n_blocks = ((pw_len + lengthMagicArray + salt_len + 8) / 64) + 1;
+
+    if (n_blocks > 2)
+    {
+      for (u32 j = 32; j < 64; j++) final[j] = 0;
+    }
+
     u32 final_len = pw_len;
 
     u32 i;
@@ -659,8 +806,19 @@ KERNEL_FQ KERNEL_FA void m07800_s04 (KERN_ATTR_BASIC ())
     final_len += salt_len;
 
     // calculate
+    //
+    // final_len reaches up to 188 bytes (pw_max 55, a magic array of up to 82 and salt_max 51),
+    // which is up to 4 SHA1 blocks. Each block count has its own branch, so every index into
+    // final[] stays constant.
 
-    if (final_len >= 56)
+    if (n_blocks == 1)
+    {
+      final[14] = 0;
+      final[15] = final_len * 8;
+
+      sha1_transform (final +  0, final +  4, final +  8, final + 12, digest);
+    }
+    else if (n_blocks == 2)
     {
       final[30] = 0;
       final[31] = final_len * 8;
@@ -668,12 +826,24 @@ KERNEL_FQ KERNEL_FA void m07800_s04 (KERN_ATTR_BASIC ())
       sha1_transform (final +  0, final +  4, final +  8, final + 12, digest);
       sha1_transform (final + 16, final + 20, final + 24, final + 28, digest);
     }
-    else
+    else if (n_blocks == 3)
     {
-      final[14] = 0;
-      final[15] = final_len * 8;
+      final[46] = 0;
+      final[47] = final_len * 8;
 
       sha1_transform (final +  0, final +  4, final +  8, final + 12, digest);
+      sha1_transform (final + 16, final + 20, final + 24, final + 28, digest);
+      sha1_transform (final + 32, final + 36, final + 40, final + 44, digest);
+    }
+    else
+    {
+      final[62] = 0;
+      final[63] = final_len * 8;
+
+      sha1_transform (final +  0, final +  4, final +  8, final + 12, digest);
+      sha1_transform (final + 16, final + 20, final + 24, final + 28, digest);
+      sha1_transform (final + 32, final + 36, final + 40, final + 44, digest);
+      sha1_transform (final + 48, final + 52, final + 56, final + 60, digest);
     }
 
     COMPARE_S_SIMD (digest[3], digest[4], digest[2], digest[1]);

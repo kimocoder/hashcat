@@ -1,0 +1,267 @@
+/**
+ * Author......: See docs/credits.txt
+ * License.....: MIT
+ */
+
+#include "common.h"
+#include "types.h"
+#include "modules.h"
+#include "bitops.h"
+#include "convert.h"
+#include "shared.h"
+
+static const u32   ATTACK_EXEC    = ATTACK_EXEC_OUTSIDE_KERNEL;
+static const u32   DGST_POS0      = 0;
+static const u32   DGST_POS1      = 1;
+static const u32   DGST_POS2      = 2;
+static const u32   DGST_POS3      = 3;
+static const u32   DGST_SIZE      = DGST_SIZE_4_4;
+static const u32   HASH_CATEGORY  = HASH_CATEGORY_OS;
+static const char *HASH_NAME      = "MD5(Sun), SunMD5";
+static const u64   KERN_TYPE      = 3300;
+static const u32   OPTI_TYPE      = OPTI_TYPE_ZERO_BYTE;
+static const u64   OPTS_TYPE      = OPTS_TYPE_STOCK_MODULE
+                                  | OPTS_TYPE_PT_GENERATE_LE;
+static const u32   SALT_TYPE      = SALT_TYPE_EMBEDDED;
+static const char *ST_PASS        = "hashcat";
+static const char *ST_HASH        = "$md5,rounds=904$4ol8A9yh$$DrANxVf9omze48HtDkwHQ0";
+
+typedef struct md5sun_tmp
+{
+  u32 digest_buf[4];
+
+} md5sun_tmp_t;
+
+static const u32   ROUNDS_MD5SUN_MIN = 4096;
+static const char *SIGNATURE_MD5SUN  = "$md5";
+
+#include "hooks_common.c"
+
+static const char *module_usage_notice (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra)
+{
+  return USAGE_NOTICE_NUM_ROUNDS;
+}
+
+static u64 module_tmp_size (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra)
+{
+  const u64 tmp_size = (const u64) sizeof (md5sun_tmp_t);
+
+  return tmp_size;
+}
+
+static void md5sun_decode (u8 digest[16], const u8 buf[22])
+{
+  int l;
+
+  l  = itoa64_to_int (buf[ 0]) <<  0;
+  l |= itoa64_to_int (buf[ 1]) <<  6;
+  l |= itoa64_to_int (buf[ 2]) << 12;
+  l |= itoa64_to_int (buf[ 3]) << 18;
+
+  digest[ 0] = (l >> 16) & 0xff;
+  digest[ 6] = (l >>  8) & 0xff;
+  digest[12] = (l >>  0) & 0xff;
+
+  l  = itoa64_to_int (buf[ 4]) <<  0;
+  l |= itoa64_to_int (buf[ 5]) <<  6;
+  l |= itoa64_to_int (buf[ 6]) << 12;
+  l |= itoa64_to_int (buf[ 7]) << 18;
+
+  digest[ 1] = (l >> 16) & 0xff;
+  digest[ 7] = (l >>  8) & 0xff;
+  digest[13] = (l >>  0) & 0xff;
+
+  l  = itoa64_to_int (buf[ 8]) <<  0;
+  l |= itoa64_to_int (buf[ 9]) <<  6;
+  l |= itoa64_to_int (buf[10]) << 12;
+  l |= itoa64_to_int (buf[11]) << 18;
+
+  digest[ 2] = (l >> 16) & 0xff;
+  digest[ 8] = (l >>  8) & 0xff;
+  digest[14] = (l >>  0) & 0xff;
+
+  l  = itoa64_to_int (buf[12]) <<  0;
+  l |= itoa64_to_int (buf[13]) <<  6;
+  l |= itoa64_to_int (buf[14]) << 12;
+  l |= itoa64_to_int (buf[15]) << 18;
+
+  digest[ 3] = (l >> 16) & 0xff;
+  digest[ 9] = (l >>  8) & 0xff;
+  digest[15] = (l >>  0) & 0xff;
+
+  l  = itoa64_to_int (buf[16]) <<  0;
+  l |= itoa64_to_int (buf[17]) <<  6;
+  l |= itoa64_to_int (buf[18]) << 12;
+  l |= itoa64_to_int (buf[19]) << 18;
+
+  digest[ 4] = (l >> 16) & 0xff;
+  digest[10] = (l >>  8) & 0xff;
+  digest[ 5] = (l >>  0) & 0xff;
+
+  l  = itoa64_to_int (buf[20]) <<  0;
+  l |= itoa64_to_int (buf[21]) <<  6;
+
+  digest[11] = (l >>  0) & 0xff;
+}
+
+static void md5sun_encode (const u8 digest[16], u8 buf[22])
+{
+  int l;
+
+  l = (digest[ 0] << 16) | (digest[ 6] << 8) | (digest[12] << 0);
+
+  buf[ 0] = int_to_itoa64 (l & 0x3f); l >>= 6;
+  buf[ 1] = int_to_itoa64 (l & 0x3f); l >>= 6;
+  buf[ 2] = int_to_itoa64 (l & 0x3f); l >>= 6;
+  buf[ 3] = int_to_itoa64 (l & 0x3f);
+
+  l = (digest[ 1] << 16) | (digest[ 7] << 8) | (digest[13] << 0);
+
+  buf[ 4] = int_to_itoa64 (l & 0x3f); l >>= 6;
+  buf[ 5] = int_to_itoa64 (l & 0x3f); l >>= 6;
+  buf[ 6] = int_to_itoa64 (l & 0x3f); l >>= 6;
+  buf[ 7] = int_to_itoa64 (l & 0x3f);
+
+  l = (digest[ 2] << 16) | (digest[ 8] << 8) | (digest[14] << 0);
+
+  buf[ 8] = int_to_itoa64 (l & 0x3f); l >>= 6;
+  buf[ 9] = int_to_itoa64 (l & 0x3f); l >>= 6;
+  buf[10] = int_to_itoa64 (l & 0x3f); l >>= 6;
+  buf[11] = int_to_itoa64 (l & 0x3f);
+
+  l = (digest[ 3] << 16) | (digest[ 9] << 8) | (digest[15] << 0);
+
+  buf[12] = int_to_itoa64 (l & 0x3f); l >>= 6;
+  buf[13] = int_to_itoa64 (l & 0x3f); l >>= 6;
+  buf[14] = int_to_itoa64 (l & 0x3f); l >>= 6;
+  buf[15] = int_to_itoa64 (l & 0x3f);
+
+  l = (digest[ 4] << 16) | (digest[10] << 8) | (digest[ 5] << 0);
+
+  buf[16] = int_to_itoa64 (l & 0x3f); l >>= 6;
+  buf[17] = int_to_itoa64 (l & 0x3f); l >>= 6;
+  buf[18] = int_to_itoa64 (l & 0x3f); l >>= 6;
+  buf[19] = int_to_itoa64 (l & 0x3f);
+
+  l = (digest[11] << 0);
+
+  buf[20] = int_to_itoa64 (l & 0x3f); l >>= 6;
+  buf[21] = int_to_itoa64 (l & 0x3f);
+}
+
+static u32 module_pw_max (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra)
+{
+  const u32 pw_max = PW_MAX;
+
+  return pw_max;
+}
+
+static int module_hash_decode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED void *digest_buf, MAYBE_UNUSED salt_t *salt, MAYBE_UNUSED void *esalt_buf, MAYBE_UNUSED void *hook_salt_buf, MAYBE_UNUSED hashinfo_t *hash_info, const char *line_buf, MAYBE_UNUSED const int line_len)
+{
+  u32 *digest = (u32 *) digest_buf;
+
+  if (line_len < 4) return (PARSER_HASH_LENGTH);
+
+  if (memcmp (line_buf, SIGNATURE_MD5SUN, 4) != 0) return (PARSER_SIGNATURE_UNMATCHED);
+
+  int pos = 4;
+  u32 extra_rounds = 0;
+
+  if (line_buf[pos] == ',' || line_buf[pos] == '$')
+  {
+    pos++;
+  }
+  else
+  {
+    return (PARSER_SIGNATURE_UNMATCHED);
+  }
+
+  if (pos + 7 <= line_len && memcmp (line_buf + pos, "rounds=", 7) == 0)
+  {
+    pos += 7;
+
+    const int rounds_start = pos;
+
+    while (pos < line_len && line_buf[pos] >= '0' && line_buf[pos] <= '9')
+    {
+      pos++;
+    }
+
+    if (pos == rounds_start) return (PARSER_SALT_VALUE);
+
+    if (pos >= line_len || line_buf[pos] != '$') return (PARSER_SEPARATOR_UNMATCHED);
+
+    char rounds_str[8] = { 0 };
+
+    const int rounds_len = pos - rounds_start;
+
+    if (rounds_len > 7) return (PARSER_SALT_VALUE);
+
+    memcpy (rounds_str, line_buf + rounds_start, rounds_len);
+
+    extra_rounds = (u32) hc_strtoul (rounds_str, NULL, 10);
+
+    pos++;
+  }
+
+  const int salt_start = pos;
+
+  int last_sep = -1;
+
+  for (int i = line_len - 1; i >= salt_start; i--)
+  {
+    if (line_buf[i] == '$')
+    {
+      last_sep = i;
+      break;
+    }
+  }
+
+  if (last_sep < 0) return (PARSER_SEPARATOR_UNMATCHED);
+
+  const char *hash_pos = line_buf + last_sep + 1;
+  const int hash_len = line_len - last_sep - 1;
+
+  if (hash_len != 22) return (PARSER_HASH_LENGTH);
+
+  const int puresalt_len = last_sep;
+
+  if (puresalt_len < 6) return (PARSER_SALT_LENGTH);
+
+  if (puresalt_len > 255) return (PARSER_SALT_LENGTH);
+
+  memset (salt->salt_buf, 0, sizeof (salt->salt_buf));
+  memcpy ((char *) salt->salt_buf, line_buf, puresalt_len);
+
+  salt->salt_len = puresalt_len;
+
+  salt->salt_iter = ROUNDS_MD5SUN_MIN + extra_rounds;
+
+  md5sun_decode ((u8 *) digest, (const u8 *) hash_pos);
+
+  return (PARSER_OK);
+}
+
+static int module_hash_encode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const void *digest_buf, MAYBE_UNUSED const salt_t *salt, MAYBE_UNUSED const void *esalt_buf, MAYBE_UNUSED const void *hook_salt_buf, MAYBE_UNUSED const hashinfo_t *hash_info, char *line_buf, MAYBE_UNUSED const int line_size)
+{
+  u8 tmp[100] = { 0 };
+
+  md5sun_encode (digest_buf, tmp);
+
+  tmp[22] = 0;
+
+  int line_len = snprintf (line_buf, line_size, "%s$%s", (const char *) salt->salt_buf, tmp);
+
+  return line_len;
+}
+
+void module_init (module_ctx_t *module_ctx)
+{
+  module_init_common (module_ctx);
+
+  module_ctx->module_hash_decode              = module_hash_decode;
+  module_ctx->module_hash_encode              = module_hash_encode;
+  module_ctx->module_pw_max                   = module_pw_max;
+  module_ctx->module_tmp_size                 = module_tmp_size;
+  module_ctx->module_usage_notice             = module_usage_notice;
+}

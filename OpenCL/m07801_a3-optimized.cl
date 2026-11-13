@@ -62,16 +62,20 @@ DECLSPEC void m07801m (PRIVATE_AS u32 *w0, PRIVATE_AS u32 *w1, PRIVATE_AS u32 *w
    * salt
    */
 
-  u32 salt_buf[8];
+  u32 salt_buf[12];
 
-  salt_buf[0] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[0]);
-  salt_buf[1] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[1]);
-  salt_buf[2] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[2]);
-  salt_buf[3] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[3]);
-  salt_buf[4] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[4]);
-  salt_buf[5] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[5]);
-  salt_buf[6] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[6]);
-  salt_buf[7] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[7]);
+  salt_buf[ 0] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 0]);
+  salt_buf[ 1] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 1]);
+  salt_buf[ 2] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 2]);
+  salt_buf[ 3] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 3]);
+  salt_buf[ 4] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 4]);
+  salt_buf[ 5] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 5]);
+  salt_buf[ 6] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 6]);
+  salt_buf[ 7] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 7]);
+  salt_buf[ 8] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 8]);
+  salt_buf[ 9] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 9]);
+  salt_buf[10] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[10]);
+  salt_buf[11] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[11]);
 
   const u32 salt_len = salt_bufs[SALT_POS_HOST].salt_len;
 
@@ -80,18 +84,18 @@ DECLSPEC void m07801m (PRIVATE_AS u32 *w0, PRIVATE_AS u32 *w1, PRIVATE_AS u32 *w
   u32 s2[4];
   u32 s3[4];
 
-  s0[0] = salt_buf[0];
-  s0[1] = salt_buf[1];
-  s0[2] = salt_buf[2];
-  s0[3] = salt_buf[3];
-  s1[0] = salt_buf[4];
-  s1[1] = salt_buf[5];
-  s1[2] = salt_buf[6];
-  s1[3] = salt_buf[7];
-  s2[0] = 0;
-  s2[1] = 0;
-  s2[2] = 0;
-  s2[3] = 0;
+  s0[0] = salt_buf[ 0];
+  s0[1] = salt_buf[ 1];
+  s0[2] = salt_buf[ 2];
+  s0[3] = salt_buf[ 3];
+  s1[0] = salt_buf[ 4];
+  s1[1] = salt_buf[ 5];
+  s1[2] = salt_buf[ 6];
+  s1[3] = salt_buf[ 7];
+  s2[0] = salt_buf[ 8];
+  s2[1] = salt_buf[ 9];
+  s2[2] = salt_buf[10];
+  s2[3] = salt_buf[11];
   s3[0] = 0;
   s3[1] = 0;
   s3[2] = 0;
@@ -119,7 +123,9 @@ DECLSPEC void m07801m (PRIVATE_AS u32 *w0, PRIVATE_AS u32 *w1, PRIVATE_AS u32 *w
      * SAP
      */
 
-    u32 final[32];
+    // SETSHIFTEDINT () below writes into final[] with no bounds check, so it has room for all 4 SHA1
+    // blocks the longest candidate, magic array and salt can need
+    u32 final[64];
 
     final[ 0] = w0[0] | s0[0];
     final[ 1] = w0[1] | s0[1];
@@ -206,14 +212,25 @@ DECLSPEC void m07801m (PRIVATE_AS u32 *w0, PRIVATE_AS u32 *w1, PRIVATE_AS u32 *w
     final[ 5] = w1[1];
     final[ 6] = w1[2];
     final[ 7] = w1[3];
-    final[ 8] = 0;
-    final[ 9] = 0;
-    final[10] = 0;
-    final[11] = 0;
-    final[12] = 0;
-    final[13] = 0;
+    final[ 8] = w2[0];
+    final[ 9] = w2[1];
+    final[10] = w2[2];
+    final[11] = w2[3];
+    final[12] = w3[0];
+    final[13] = w3[1];
     final[14] = 0;
     final[15] = 0;
+
+    // final[] holds up to 4 SHA1 blocks. final[16] to final[31] are still zero from the first block
+    // above, and SETSHIFTEDINT () ORs into zero words, so only the third and fourth block need
+    // zeroing, and only when the data reaches them.
+
+    const u32 n_blocks = ((pw_len + lengthMagicArray + salt_len + 8) / 64) + 1;
+
+    if (n_blocks > 2)
+    {
+      for (u32 j = 32; j < 64; j++) final[j] = 0;
+    }
 
     u32 final_len = pw_len;
 
@@ -248,8 +265,19 @@ DECLSPEC void m07801m (PRIVATE_AS u32 *w0, PRIVATE_AS u32 *w1, PRIVATE_AS u32 *w
     final_len += salt_len;
 
     // calculate
+    //
+    // final_len reaches up to 188 bytes (pw_max 55, a magic array of up to 82 and salt_max 51),
+    // which is up to 4 SHA1 blocks. Each block count has its own branch, so every index into
+    // final[] stays constant.
 
-    if (final_len >= 56)
+    if (n_blocks == 1)
+    {
+      final[14] = 0;
+      final[15] = final_len * 8;
+
+      sha1_transform (final +  0, final +  4, final +  8, final + 12, digest);
+    }
+    else if (n_blocks == 2)
     {
       final[30] = 0;
       final[31] = final_len * 8;
@@ -257,12 +285,24 @@ DECLSPEC void m07801m (PRIVATE_AS u32 *w0, PRIVATE_AS u32 *w1, PRIVATE_AS u32 *w
       sha1_transform (final +  0, final +  4, final +  8, final + 12, digest);
       sha1_transform (final + 16, final + 20, final + 24, final + 28, digest);
     }
-    else
+    else if (n_blocks == 3)
     {
-      final[14] = 0;
-      final[15] = final_len * 8;
+      final[46] = 0;
+      final[47] = final_len * 8;
 
       sha1_transform (final +  0, final +  4, final +  8, final + 12, digest);
+      sha1_transform (final + 16, final + 20, final + 24, final + 28, digest);
+      sha1_transform (final + 32, final + 36, final + 40, final + 44, digest);
+    }
+    else
+    {
+      final[62] = 0;
+      final[63] = final_len * 8;
+
+      sha1_transform (final +  0, final +  4, final +  8, final + 12, digest);
+      sha1_transform (final + 16, final + 20, final + 24, final + 28, digest);
+      sha1_transform (final + 32, final + 36, final + 40, final + 44, digest);
+      sha1_transform (final + 48, final + 52, final + 56, final + 60, digest);
     }
 
     COMPARE_M_SIMD (0, 0, digest[2] & 0xffff0000, digest[1]);
@@ -279,16 +319,20 @@ DECLSPEC void m07801s (PRIVATE_AS u32 *w0, PRIVATE_AS u32 *w1, PRIVATE_AS u32 *w
    * salt
    */
 
-  u32 salt_buf[8];
+  u32 salt_buf[12];
 
-  salt_buf[0] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[0]);
-  salt_buf[1] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[1]);
-  salt_buf[2] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[2]);
-  salt_buf[3] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[3]);
-  salt_buf[4] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[4]);
-  salt_buf[5] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[5]);
-  salt_buf[6] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[6]);
-  salt_buf[7] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[7]);
+  salt_buf[ 0] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 0]);
+  salt_buf[ 1] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 1]);
+  salt_buf[ 2] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 2]);
+  salt_buf[ 3] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 3]);
+  salt_buf[ 4] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 4]);
+  salt_buf[ 5] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 5]);
+  salt_buf[ 6] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 6]);
+  salt_buf[ 7] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 7]);
+  salt_buf[ 8] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 8]);
+  salt_buf[ 9] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[ 9]);
+  salt_buf[10] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[10]);
+  salt_buf[11] = hc_swap32_S (salt_bufs[SALT_POS_HOST].salt_buf[11]);
 
   const u32 salt_len = salt_bufs[SALT_POS_HOST].salt_len;
 
@@ -297,18 +341,18 @@ DECLSPEC void m07801s (PRIVATE_AS u32 *w0, PRIVATE_AS u32 *w1, PRIVATE_AS u32 *w
   u32 s2[4];
   u32 s3[4];
 
-  s0[0] = salt_buf[0];
-  s0[1] = salt_buf[1];
-  s0[2] = salt_buf[2];
-  s0[3] = salt_buf[3];
-  s1[0] = salt_buf[4];
-  s1[1] = salt_buf[5];
-  s1[2] = salt_buf[6];
-  s1[3] = salt_buf[7];
-  s2[0] = 0;
-  s2[1] = 0;
-  s2[2] = 0;
-  s2[3] = 0;
+  s0[0] = salt_buf[ 0];
+  s0[1] = salt_buf[ 1];
+  s0[2] = salt_buf[ 2];
+  s0[3] = salt_buf[ 3];
+  s1[0] = salt_buf[ 4];
+  s1[1] = salt_buf[ 5];
+  s1[2] = salt_buf[ 6];
+  s1[3] = salt_buf[ 7];
+  s2[0] = salt_buf[ 8];
+  s2[1] = salt_buf[ 9];
+  s2[2] = salt_buf[10];
+  s2[3] = salt_buf[11];
   s3[0] = 0;
   s3[1] = 0;
   s3[2] = 0;
@@ -348,7 +392,9 @@ DECLSPEC void m07801s (PRIVATE_AS u32 *w0, PRIVATE_AS u32 *w1, PRIVATE_AS u32 *w
      * SAP
      */
 
-    u32 final[32];
+    // SETSHIFTEDINT () below writes into final[] with no bounds check, so it has room for all 4 SHA1
+    // blocks the longest candidate, magic array and salt can need
+    u32 final[64];
 
     final[ 0] = w0[0] | s0[0];
     final[ 1] = w0[1] | s0[1];
@@ -435,14 +481,25 @@ DECLSPEC void m07801s (PRIVATE_AS u32 *w0, PRIVATE_AS u32 *w1, PRIVATE_AS u32 *w
     final[ 5] = w1[1];
     final[ 6] = w1[2];
     final[ 7] = w1[3];
-    final[ 8] = 0;
-    final[ 9] = 0;
-    final[10] = 0;
-    final[11] = 0;
-    final[12] = 0;
-    final[13] = 0;
+    final[ 8] = w2[0];
+    final[ 9] = w2[1];
+    final[10] = w2[2];
+    final[11] = w2[3];
+    final[12] = w3[0];
+    final[13] = w3[1];
     final[14] = 0;
     final[15] = 0;
+
+    // final[] holds up to 4 SHA1 blocks. final[16] to final[31] are still zero from the first block
+    // above, and SETSHIFTEDINT () ORs into zero words, so only the third and fourth block need
+    // zeroing, and only when the data reaches them.
+
+    const u32 n_blocks = ((pw_len + lengthMagicArray + salt_len + 8) / 64) + 1;
+
+    if (n_blocks > 2)
+    {
+      for (u32 j = 32; j < 64; j++) final[j] = 0;
+    }
 
     u32 final_len = pw_len;
 
@@ -477,8 +534,19 @@ DECLSPEC void m07801s (PRIVATE_AS u32 *w0, PRIVATE_AS u32 *w1, PRIVATE_AS u32 *w
     final_len += salt_len;
 
     // calculate
+    //
+    // final_len reaches up to 188 bytes (pw_max 55, a magic array of up to 82 and salt_max 51),
+    // which is up to 4 SHA1 blocks. Each block count has its own branch, so every index into
+    // final[] stays constant.
 
-    if (final_len >= 56)
+    if (n_blocks == 1)
+    {
+      final[14] = 0;
+      final[15] = final_len * 8;
+
+      sha1_transform (final +  0, final +  4, final +  8, final + 12, digest);
+    }
+    else if (n_blocks == 2)
     {
       final[30] = 0;
       final[31] = final_len * 8;
@@ -486,12 +554,24 @@ DECLSPEC void m07801s (PRIVATE_AS u32 *w0, PRIVATE_AS u32 *w1, PRIVATE_AS u32 *w
       sha1_transform (final +  0, final +  4, final +  8, final + 12, digest);
       sha1_transform (final + 16, final + 20, final + 24, final + 28, digest);
     }
-    else
+    else if (n_blocks == 3)
     {
-      final[14] = 0;
-      final[15] = final_len * 8;
+      final[46] = 0;
+      final[47] = final_len * 8;
 
       sha1_transform (final +  0, final +  4, final +  8, final + 12, digest);
+      sha1_transform (final + 16, final + 20, final + 24, final + 28, digest);
+      sha1_transform (final + 32, final + 36, final + 40, final + 44, digest);
+    }
+    else
+    {
+      final[62] = 0;
+      final[63] = final_len * 8;
+
+      sha1_transform (final +  0, final +  4, final +  8, final + 12, digest);
+      sha1_transform (final + 16, final + 20, final + 24, final + 28, digest);
+      sha1_transform (final + 32, final + 36, final + 40, final + 44, digest);
+      sha1_transform (final + 48, final + 52, final + 56, final + 60, digest);
     }
 
     COMPARE_S_SIMD (0, 0, digest[2] & 0xffff0000, digest[1]);
@@ -513,8 +593,6 @@ KERNEL_FQ KERNEL_FA void m07801_m04 (KERN_ATTR_BASIC ())
   /**
    * modifier
    */
-
-  //const u64 lid = get_local_id (0);
 
   u32 w0[4];
 
@@ -569,8 +647,6 @@ KERNEL_FQ KERNEL_FA void m07801_m08 (KERN_ATTR_BASIC ())
    * modifier
    */
 
-  //const u64 lid = get_local_id (0);
-
   u32 w0[4];
 
   w0[0] = pws[gid].i[ 0];
@@ -610,6 +686,55 @@ KERNEL_FQ KERNEL_FA void m07801_m08 (KERN_ATTR_BASIC ())
 
 KERNEL_FQ KERNEL_FA void m07801_m16 (KERN_ATTR_BASIC ())
 {
+  /**
+   * base
+   */
+
+  const u64 lid = get_local_id (0);
+  const u64 gid = get_global_id (0);
+  const u64 lsz = get_local_size (0);
+
+  if (gid >= GID_CNT) return;
+
+  /**
+   * modifier
+   */
+
+  u32 w0[4];
+
+  w0[0] = pws[gid].i[ 0];
+  w0[1] = pws[gid].i[ 1];
+  w0[2] = pws[gid].i[ 2];
+  w0[3] = pws[gid].i[ 3];
+
+  u32 w1[4];
+
+  w1[0] = pws[gid].i[ 4];
+  w1[1] = pws[gid].i[ 5];
+  w1[2] = pws[gid].i[ 6];
+  w1[3] = pws[gid].i[ 7];
+
+  u32 w2[4];
+
+  w2[0] = pws[gid].i[ 8];
+  w2[1] = pws[gid].i[ 9];
+  w2[2] = pws[gid].i[10];
+  w2[3] = pws[gid].i[11];
+
+  u32 w3[4];
+
+  w3[0] = pws[gid].i[12];
+  w3[1] = pws[gid].i[13];
+  w3[2] = 0;
+  w3[3] = 0;
+
+  const u32 pw_len = pws[gid].pw_len & 63;
+
+  /**
+   * main
+   */
+
+  m07801m (w0, w1, w2, w3, pw_len, pws, rules_buf, combs_buf, bfs_buf, tmps, hooks, bitmaps_buf_s1_a, bitmaps_buf_s1_b, bitmaps_buf_s1_c, bitmaps_buf_s1_d, bitmaps_buf_s2_a, bitmaps_buf_s2_b, bitmaps_buf_s2_c, bitmaps_buf_s2_d, plains_buf, digests_buf, hashes_shown, salt_bufs, esalt_bufs, d_return_buf, d_extra0_buf, d_extra1_buf, d_extra2_buf, d_extra3_buf, kernel_param, gid, lid, lsz);
 }
 
 KERNEL_FQ KERNEL_FA void m07801_s04 (KERN_ATTR_BASIC ())
@@ -627,8 +752,6 @@ KERNEL_FQ KERNEL_FA void m07801_s04 (KERN_ATTR_BASIC ())
   /**
    * modifier
    */
-
-  //const u64 lid = get_local_id (0);
 
   u32 w0[4];
 
@@ -683,8 +806,6 @@ KERNEL_FQ KERNEL_FA void m07801_s08 (KERN_ATTR_BASIC ())
    * modifier
    */
 
-  //const u64 lid = get_local_id (0);
-
   u32 w0[4];
 
   w0[0] = pws[gid].i[ 0];
@@ -724,4 +845,53 @@ KERNEL_FQ KERNEL_FA void m07801_s08 (KERN_ATTR_BASIC ())
 
 KERNEL_FQ KERNEL_FA void m07801_s16 (KERN_ATTR_BASIC ())
 {
+  /**
+   * base
+   */
+
+  const u64 lid = get_local_id (0);
+  const u64 gid = get_global_id (0);
+  const u64 lsz = get_local_size (0);
+
+  if (gid >= GID_CNT) return;
+
+  /**
+   * modifier
+   */
+
+  u32 w0[4];
+
+  w0[0] = pws[gid].i[ 0];
+  w0[1] = pws[gid].i[ 1];
+  w0[2] = pws[gid].i[ 2];
+  w0[3] = pws[gid].i[ 3];
+
+  u32 w1[4];
+
+  w1[0] = pws[gid].i[ 4];
+  w1[1] = pws[gid].i[ 5];
+  w1[2] = pws[gid].i[ 6];
+  w1[3] = pws[gid].i[ 7];
+
+  u32 w2[4];
+
+  w2[0] = pws[gid].i[ 8];
+  w2[1] = pws[gid].i[ 9];
+  w2[2] = pws[gid].i[10];
+  w2[3] = pws[gid].i[11];
+
+  u32 w3[4];
+
+  w3[0] = pws[gid].i[12];
+  w3[1] = pws[gid].i[13];
+  w3[2] = 0;
+  w3[3] = 0;
+
+  const u32 pw_len = pws[gid].pw_len & 63;
+
+  /**
+   * main
+   */
+
+  m07801s (w0, w1, w2, w3, pw_len, pws, rules_buf, combs_buf, bfs_buf, tmps, hooks, bitmaps_buf_s1_a, bitmaps_buf_s1_b, bitmaps_buf_s1_c, bitmaps_buf_s1_d, bitmaps_buf_s2_a, bitmaps_buf_s2_b, bitmaps_buf_s2_c, bitmaps_buf_s2_d, plains_buf, digests_buf, hashes_shown, salt_bufs, esalt_bufs, d_return_buf, d_extra0_buf, d_extra1_buf, d_extra2_buf, d_extra3_buf, kernel_param, gid, lid, lsz);
 }

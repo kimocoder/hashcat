@@ -477,11 +477,6 @@ KERNEL_FQ KERNEL_FA void m21800_comp (KERN_ATTR_TMPS_ESALT (electrum_tmp_t, elec
   key[2] = h32_from_64_S (sha512_ctx.h[3]);
   key[3] = l32_from_64_S (sha512_ctx.h[3]);
 
-  key[0] = hc_swap32_S (key[0]);
-  key[1] = hc_swap32_S (key[1]);
-  key[2] = hc_swap32_S (key[2]);
-  key[3] = hc_swap32_S (key[3]);
-
 
   /*
    * AES decrypt the data_buf
@@ -493,7 +488,7 @@ KERNEL_FQ KERNEL_FA void m21800_comp (KERN_ATTR_TMPS_ESALT (electrum_tmp_t, elec
 
   u32 ks[KEYLEN];
 
-  aes128_set_decrypt_key (ks, key, s_te0, s_te1, s_te2, s_te3, s_td0, s_td1, s_td2, s_td3);
+  AES128_set_decrypt_key (ks, key, s_te0, s_te1, s_te2, s_te3, s_td0, s_td1, s_td2, s_td3);
 
   // #define AES_LEN 1024
   // in my tests it also worked with only 128 input bytes !
@@ -655,12 +650,10 @@ KERNEL_FQ KERNEL_FA void m21800_comp (KERN_ATTR_TMPS_ESALT (electrum_tmp_t, elec
 
       if ((entropy >= MIN_ENTROPY) && (entropy <= MAX_ENTROPY))
       {
-        if (hc_atomic_inc (&hashes_shown[DIGESTS_OFFSET_HOST]) == 0)
+        if (hc_atomic_inc (&hashes_shown[digest_cur]) == 0)
         {
-          mark_hash (plains_buf, d_return_buf, SALT_POS_HOST, DIGESTS_CNT, 0, DIGESTS_OFFSET_HOST + 0, gid, 0, 0, 0);
+          mark_hash (plains_buf, d_return_buf, SALT_POS_HOST, DIGESTS_CNT, digest_pos, digest_cur, gid, 0, 0, 0);
         }
-
-        return;
       }
     }
   }
@@ -676,11 +669,9 @@ KERNEL_FQ KERNEL_FA void m21800_comp (KERN_ATTR_TMPS_ESALT (electrum_tmp_t, elec
       ((tmp[0] == 0x7b) && (tmp[1] == 0x0d) && (tmp[2] == 0x0a) && (tmp[3] == 0x20) &&
        (tmp[4] == 0x20) && (tmp[5] == 0x20) && (tmp[6] == 0x20) && (tmp[7] == 0x22)))
   {
-    if (hc_atomic_inc (&hashes_shown[DIGESTS_OFFSET_HOST]) == 0)
+    if (hc_atomic_inc (&hashes_shown[digest_cur]) == 0)
     {
-      mark_hash (plains_buf, d_return_buf, SALT_POS_HOST, DIGESTS_CNT, 0, DIGESTS_OFFSET_HOST + 0, gid, 0, 0, 0);
+      mark_hash (plains_buf, d_return_buf, SALT_POS_HOST, DIGESTS_CNT, digest_pos, digest_cur, gid, 0, 0, 0);
     }
-
-    return;
   }
 }

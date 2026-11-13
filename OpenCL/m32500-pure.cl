@@ -3,7 +3,7 @@
  * License.....: MIT
  */
 
-// #define NEW_SIMD_CODE
+#define NEW_SIMD_CODE
 
 #ifdef KERNEL_STATIC
 #include M2S(INCLUDE_PATH/inc_vendor.h)
@@ -107,7 +107,7 @@ DECLSPEC u32 base64_encode_three_bytes_better (u32 in)
   return out;
 }
 
-DECLSPEC void base64_encode_sha256 (u32 *out, const u32 *in)
+DECLSPEC void base64_encode_sha256 (PRIVATE_AS u32 *out, PRIVATE_AS const u32 *in)
 {
   out[0] = base64_encode_three_bytes_better(                (in[0] >>  8));
   out[1] = base64_encode_three_bytes_better((in[0] << 16) | (in[1] >> 16));
@@ -411,10 +411,10 @@ KERNEL_FQ KERNEL_FA void m32500_comp (KERN_ATTR_TMPS_ESALT (doge_tmp_t, payload_
   u32 prev_ct[4]; // iv is the first 4 u32s -> needs to be prev ct for cbc encryption (each block used prior ct)
                   // todo: might want to swap in module
 
-  prev_ct[0] = hc_swap32 (esalt_bufs[DIGESTS_OFFSET_HOST].pl_buf[0]);
-  prev_ct[1] = hc_swap32 (esalt_bufs[DIGESTS_OFFSET_HOST].pl_buf[1]);
-  prev_ct[2] = hc_swap32 (esalt_bufs[DIGESTS_OFFSET_HOST].pl_buf[2]);
-  prev_ct[3] = hc_swap32 (esalt_bufs[DIGESTS_OFFSET_HOST].pl_buf[3]);
+  prev_ct[0] = hc_swap32_S (esalt_bufs[DIGESTS_OFFSET_HOST].pl_buf[0]);
+  prev_ct[1] = hc_swap32_S (esalt_bufs[DIGESTS_OFFSET_HOST].pl_buf[1]);
+  prev_ct[2] = hc_swap32_S (esalt_bufs[DIGESTS_OFFSET_HOST].pl_buf[2]);
+  prev_ct[3] = hc_swap32_S (esalt_bufs[DIGESTS_OFFSET_HOST].pl_buf[3]);
 
   u32 isAscii = 0;
 

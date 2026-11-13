@@ -1,0 +1,215 @@
+/**
+ * Author......: See docs/credits.txt
+ * License.....: MIT
+ *
+ * Based on module m30600
+ *
+ * Implementation following https://passlib.readthedocs.io/en/stable/lib/passlib.hash.bcrypt_sha256.html
+ * Example hash:pass from passlib website:
+ * $bcrypt-sha256$v=2,t=2b,r=12$n79VH.0Q2TMWmt3Oqt9uku$Kq4Noyk3094Y2QlB8NdRT8SvGiI4ft2:password
+ */
+
+#include "common.h"
+#include "types.h"
+#include "modules.h"
+#include "bitops.h"
+#include "convert.h"
+#include "shared.h"
+#include "parser.h"
+
+static const u32   ATTACK_EXEC    = ATTACK_EXEC_OUTSIDE_KERNEL;
+static const u32   DGST_POS0      = 0;
+static const u32   DGST_POS1      = 1;
+static const u32   DGST_POS2      = 2;
+static const u32   DGST_POS3      = 3;
+static const u32   DGST_SIZE      = DGST_SIZE_4_6;
+static const u32   HASH_CATEGORY  = HASH_CATEGORY_GENERIC_KDF;
+static const char *HASH_NAME      = "bcrypt(HMAC-SHA256($pass))";
+static const u64   KERN_TYPE      = 30601;
+static const u32   OPTI_TYPE      = OPTI_TYPE_ZERO_BYTE;
+static const u64   OPTS_TYPE      = OPTS_TYPE_STOCK_MODULE
+                                  | OPTS_TYPE_PT_GENERATE_LE
+                                  | OPTS_TYPE_DYNAMIC_SHARED;
+static const u32   SALT_TYPE      = SALT_TYPE_EMBEDDED;
+static const char *ST_PASS        = "hashcat";
+static const char *ST_HASH        = "$bcrypt-sha256$v=2,t=2b,r=12$KSOjON/ciJR86a00N5q61.$AmWZucQuHk13FGkQWhgMeiFvBfm2GCy";
+
+#include "hooks_common.c"
+
+typedef struct bcrypt_tmp
+{
+  u32 E[18];
+
+  u32 P[18];
+
+  u32 S0[256];
+  u32 S1[256];
+  u32 S2[256];
+  u32 S3[256];
+
+} bcrypt_tmp_t;
+
+typedef struct hmac_b64_salt
+{
+  u32 string_salt_buf[16];
+  u32 string_salt_len;
+
+} hmac_b64_salt_t;
+
+#include "blowfish_common.c"
+
+static const char *SIGNATURE_BCRYPTHMACSHA256V2T2B = "$bcrypt-sha256$v=2,t=2b,r=";
+
+static u64 module_tmp_size (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra)
+{
+  const u64 tmp_size = (const u64) sizeof (bcrypt_tmp_t);
+
+  return tmp_size;
+}
+
+static u64 module_esalt_size (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const user_options_t *user_options, MAYBE_UNUSED const user_options_extra_t *user_options_extra)
+{
+  const u64 esalt_size = (const u64) sizeof (hmac_b64_salt_t);
+
+  return esalt_size;
+}
+
+static int module_hash_decode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED void *digest_buf, MAYBE_UNUSED salt_t *salt, MAYBE_UNUSED void *esalt_buf, MAYBE_UNUSED void *hook_salt_buf, MAYBE_UNUSED hashinfo_t *hash_info, const char *line_buf, MAYBE_UNUSED const int line_len)
+{
+  u32 *digest = (u32 *) digest_buf;
+  hmac_b64_salt_t *esalt = (hmac_b64_salt_t *) esalt_buf;
+
+  hc_token_t token;
+
+  memset (&token, 0, sizeof (hc_token_t));
+
+  // $bcrypt-sha256$v=2,t=2b,r=12$n79VH.0Q2TMWmt3Oqt9uku$Kq4Noyk3094Y2QlB8NdRT8SvGiI4ft2
+  token.token_cnt  = 4;
+
+  token.signatures_cnt    = 1;
+  token.signatures_buf[0] = SIGNATURE_BCRYPTHMACSHA256V2T2B;
+
+  token.len[0]     = 26;
+  token.attr[0]    = TOKEN_ATTR_FIXED_LENGTH
+                   | TOKEN_ATTR_VERIFY_SIGNATURE;
+
+  token.sep[1]     = '$';
+  token.len_min[1] = 1;
+  token.len_max[1] = 2;
+  token.attr[1]    = TOKEN_ATTR_VERIFY_LENGTH
+                   | TOKEN_ATTR_VERIFY_DIGIT;
+
+  token.sep[2]     = '$';
+  token.len[2]     = 22;
+  token.attr[2]    = TOKEN_ATTR_FIXED_LENGTH
+                   | TOKEN_ATTR_VERIFY_BASE64B;
+
+  token.len[3]     = 31;
+  token.attr[3]    = TOKEN_ATTR_FIXED_LENGTH
+                   | TOKEN_ATTR_VERIFY_BASE64B;
+
+  const int rc_tokenizer = input_tokenizer ((const u8 *) line_buf, line_len, &token);
+
+  if (rc_tokenizer != PARSER_OK) return (rc_tokenizer);
+
+  memset (esalt, 0, sizeof (hmac_b64_salt_t));
+
+  const u8 *iter_pos = token.buf[1];
+  const u8 *salt_pos = token.buf[2];
+  const u8 *hash_pos = token.buf[3];
+
+  const int salt_len = token.len[2];
+  const int hash_len = token.len[3];
+
+  // Parse salt for hmac sha256
+  bool parse_rc = generic_salt_decode (hashconfig, salt_pos, salt_len, (u8 *) esalt->string_salt_buf, (int *) &esalt->string_salt_len);
+
+  if (parse_rc == false) return (PARSER_SALT_LENGTH);
+
+  // Parse salt for bcrypt
+  salt->salt_len  = 16;
+
+  const u32 iter = hc_strtoul ((const char *) iter_pos, NULL, 10);
+
+  if (iter > 31) return (PARSER_SALT_ITERATION);
+
+  salt->salt_iter = 1u << iter;
+
+  // memcpy ((char *) salt->salt_sign, line_buf, 26);
+
+  u8 *salt_buf_ptr = (u8 *) salt->salt_buf;
+
+  u8 tmp_buf[100];
+
+  memset (tmp_buf, 0, sizeof (tmp_buf));
+
+  base64_decode (bf64_to_int, salt_pos, salt_len, tmp_buf);
+
+  memcpy (salt_buf_ptr, tmp_buf, 16);
+
+  salt->salt_buf[0] = byte_swap_32 (salt->salt_buf[0]);
+  salt->salt_buf[1] = byte_swap_32 (salt->salt_buf[1]);
+  salt->salt_buf[2] = byte_swap_32 (salt->salt_buf[2]);
+  salt->salt_buf[3] = byte_swap_32 (salt->salt_buf[3]);
+
+  memset (tmp_buf, 0, sizeof (tmp_buf));
+
+  base64_decode (bf64_to_int, hash_pos, hash_len, tmp_buf);
+
+  memcpy (digest, tmp_buf, 24);
+
+  digest[0] = byte_swap_32 (digest[0]);
+  digest[1] = byte_swap_32 (digest[1]);
+  digest[2] = byte_swap_32 (digest[2]);
+  digest[3] = byte_swap_32 (digest[3]);
+  digest[4] = byte_swap_32 (digest[4]);
+  digest[5] = byte_swap_32 (digest[5]);
+
+  digest[5] &= ~0xffu; // its just 23 not 24 !
+
+  return (PARSER_OK);
+}
+
+static int module_hash_encode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYBE_UNUSED const void *digest_buf, MAYBE_UNUSED const salt_t *salt, MAYBE_UNUSED const void *esalt_buf, MAYBE_UNUSED const void *hook_salt_buf, MAYBE_UNUSED const hashinfo_t *hash_info, char *line_buf, MAYBE_UNUSED const int line_size)
+{
+  const u32 *digest = (const u32 *) digest_buf;
+
+  u32 tmp_digest[6];
+
+  tmp_digest[0] = byte_swap_32 (digest[0]);
+  tmp_digest[1] = byte_swap_32 (digest[1]);
+  tmp_digest[2] = byte_swap_32 (digest[2]);
+  tmp_digest[3] = byte_swap_32 (digest[3]);
+  tmp_digest[4] = byte_swap_32 (digest[4]);
+  tmp_digest[5] = byte_swap_32 (digest[5]);
+
+  u32 tmp_salt[4];
+
+  tmp_salt[0] = byte_swap_32 (salt->salt_buf[0]);
+  tmp_salt[1] = byte_swap_32 (salt->salt_buf[1]);
+  tmp_salt[2] = byte_swap_32 (salt->salt_buf[2]);
+  tmp_salt[3] = byte_swap_32 (salt->salt_buf[3]);
+
+  char tmp_buf[84];
+
+  base64_encode (int_to_bf64, (const u8 *) tmp_salt,   16, (u8 *) tmp_buf +  0);
+  tmp_buf[22] = '$';
+  base64_encode (int_to_bf64, (const u8 *) tmp_digest, 23, (u8 *) tmp_buf + 23);
+
+  tmp_buf[23 + 31] = 0; // base64_encode wants to pad
+
+  return snprintf (line_buf, line_size, "%s%d$%s", (const char *) SIGNATURE_BCRYPTHMACSHA256V2T2B, (int)log2(salt->salt_iter), tmp_buf);
+}
+
+void module_init (module_ctx_t *module_ctx)
+{
+  module_init_common (module_ctx);
+
+  module_ctx->module_benchmark_cost           = blowfish_module_benchmark_cost;
+  module_ctx->module_esalt_size               = module_esalt_size;
+  module_ctx->module_hash_decode              = module_hash_decode;
+  module_ctx->module_hash_encode              = module_hash_encode;
+  module_ctx->module_jit_build_options        = blowfish_module_jit_build_options;
+  module_ctx->module_jit_cache_disable        = blowfish_module_jit_cache_disable;
+  module_ctx->module_tmp_size                 = module_tmp_size;
+}

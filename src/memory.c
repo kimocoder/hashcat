@@ -7,6 +7,27 @@
 #include "types.h"
 #include "memory.h"
 
+#if defined (__linux__)
+#include <sys/mman.h>
+#endif
+
+#define HC_HUGEPAGE_MIN  (16 * 1024 * 1024)
+#define HC_HUGEPAGE_SIZE ( 2 * 1024 * 1024)
+
+static void hc_hugepage_hint (MAYBE_UNUSED void *p, MAYBE_UNUSED const size_t sz)
+{
+  #if defined (__linux__) && defined (MADV_HUGEPAGE)
+
+  if (sz < HC_HUGEPAGE_MIN) return;
+
+  const uintptr_t beg = ((uintptr_t) p + HC_HUGEPAGE_SIZE - 1) & ~((uintptr_t) HC_HUGEPAGE_SIZE - 1);
+  const uintptr_t end = ((uintptr_t) p + sz) & ~((uintptr_t) HC_HUGEPAGE_SIZE - 1);
+
+  if (end > beg) madvise ((void *) beg, (size_t) (end - beg), MADV_HUGEPAGE);
+
+  #endif
+}
+
 void *hccalloc (const size_t nmemb, const size_t sz)
 {
   void *p = calloc (nmemb, sz);
@@ -17,6 +38,8 @@ void *hccalloc (const size_t nmemb, const size_t sz)
 
     return (NULL);
   }
+
+  hc_hugepage_hint (p, nmemb * sz);
 
   return (p);
 }
@@ -41,6 +64,8 @@ void *hcrealloc (void *ptr, const size_t oldsz, const size_t addsz)
   }
 
   memset ((char *) p + oldsz, 0, addsz);
+
+  hc_hugepage_hint (p, oldsz + addsz);
 
   return (p);
 }
@@ -67,7 +92,65 @@ void hcfree (void *ptr)
   free (ptr);
 }
 
-void *hcmalloc_aligned (const size_t sz, const int align)
+void *hc_alloc_aligned (size_t alignment, size_t size)
+{
+  void *ptr = NULL;
+
+  #if defined (__linux__)   || defined (__APPLE__)     || defined (__OpenBSD__) || defined (__NetBSD__) || \
+      defined (__FreeBSD__) || defined (__DragonFly__) || defined (__CYGWIN__)  || defined (__MSYS__)
+
+  if (posix_memalign (&ptr, alignment, size) != 0)
+  {
+    fprintf (stderr, "! hc_aligned_alloc: %s\n", MSG_ENOMEM);
+
+    return NULL;
+  }
+
+  #elif defined (_WIN)
+
+  ptr = _aligned_malloc (size, alignment);
+
+  if (ptr == NULL)
+  {
+    fprintf (stderr, "! hc_aligned_alloc: %s\n", MSG_ENOMEM);
+
+    return NULL;
+  }
+
+  #else
+
+  #error "Platform not supported for aligned allocation"
+
+  #endif
+
+  // Before the memset, so the pages are backed as they are first touched. hccalloc () does this for
+  // every other large allocation, and the pcfg pool is the largest one there is.
+
+  hc_hugepage_hint (ptr, size);
+
+  memset (ptr, 0, size);
+
+  return ptr;
+}
+
+void hc_free_aligned (void **ptr)
+{
+  if (ptr == NULL || *ptr == NULL) return;
+
+  #if defined (_WIN)
+
+  _aligned_free (*ptr);
+
+  #else
+
+  free (*ptr);
+
+  #endif
+
+  *ptr = NULL;
+}
+
+void *hcmalloc_bridge_aligned (const size_t sz, const int align)
 {
   uintptr_t align_mask = (uintptr_t) (align - 1);
 
@@ -86,7 +169,7 @@ void *hcmalloc_aligned (const size_t sz, const int align)
   return aligned_ptr;
 }
 
-void hcfree_aligned(void *ptr)
+void hcfree_bridge_aligned (void *ptr)
 {
   if (ptr != NULL)
   {

@@ -10,6 +10,6 @@
 
 int get_runtime_left (const hashcat_ctx_t *hashcat_ctx);
 
-HC_API_CALL void *thread_monitor (void *p);
+HC_THREAD_FUNC thread_monitor (void *p);
 
 #endif // HC_MONITOR_H

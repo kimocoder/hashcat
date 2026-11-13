@@ -7,6 +7,8 @@
 #include "types.h"
 #include "memory.h"
 #include "shared.h"
+#include "filehandling.h"
+#include "path.h"
 #include "event.h"
 #include "folder.h"
 #include "ext_sysfs_amdgpu.h"
@@ -74,7 +76,21 @@ char *hm_SYSFS_AMDGPU_get_syspath_hwmon (void *hashcat_ctx, const int backend_de
 
   if (hwmonN == NULL)
   {
-    event_log_error (hashcat_ctx, "First_file_in_directory() failed.");
+    hwmon_ctx_t *hwmon_ctx = ((hashcat_ctx_t *) hashcat_ctx)->hwmon_ctx;
+
+    hm_attrs_t *hm_device = &hwmon_ctx->hm_device[backend_device_idx];
+
+    if ((hm_device->fanspeed_get_supported == true) || (hm_device->temperature_get_supported == true))
+    {
+      backend_ctx_t *backend_ctx = ((hashcat_ctx_t *) hashcat_ctx)->backend_ctx;
+
+      const u32 device_id = backend_ctx->devices_param[backend_device_idx].device_id;
+
+      event_log_warning (hashcat_ctx, "* Device #%u: AMD GPU hwmon interface not available. Hardware monitoring disabled.", device_id + 1);
+    }
+
+    hm_device->fanspeed_get_supported    = false;
+    hm_device->temperature_get_supported = false;
 
     hcfree (syspath);
 
@@ -95,6 +111,17 @@ char *hm_SYSFS_AMDGPU_get_syspath_hwmon (void *hashcat_ctx, const int backend_de
 
 int hm_SYSFS_AMDGPU_get_fan_speed_current (void *hashcat_ctx, const int backend_device_idx, int *val)
 {
+  backend_ctx_t *backend_ctx = ((hashcat_ctx_t *) hashcat_ctx)->backend_ctx;
+
+  hc_device_param_t *device_param = &backend_ctx->devices_param[backend_device_idx];
+
+  if (device_param->device_host_unified_memory == 1)
+  {
+    *val = 0;
+
+    return 0;
+  }
+
   char *syspath = hm_SYSFS_AMDGPU_get_syspath_hwmon (hashcat_ctx, backend_device_idx);
 
   if (syspath == NULL) return -1;
@@ -111,7 +138,7 @@ int hm_SYSFS_AMDGPU_get_fan_speed_current (void *hashcat_ctx, const int backend_
 
   if (hc_fopen (&fp_cur, path_cur, "r") == false)
   {
-    event_log_error (hashcat_ctx, "%s: %s", path_cur, strerror (errno));
+    event_log_error (hashcat_ctx, "%s: %s", path_cur, hc_fopen_strerror ());
 
     hcfree (path_cur);
     hcfree (path_max);
@@ -139,7 +166,7 @@ int hm_SYSFS_AMDGPU_get_fan_speed_current (void *hashcat_ctx, const int backend_
 
   if (hc_fopen (&fp_max, path_max, "r") == false)
   {
-    event_log_error (hashcat_ctx, "%s: %s", path_max, strerror (errno));
+    event_log_error (hashcat_ctx, "%s: %s", path_max, hc_fopen_strerror ());
 
     hcfree (path_cur);
     hcfree (path_max);
@@ -201,7 +228,7 @@ int hm_SYSFS_AMDGPU_get_temperature_current (void *hashcat_ctx, const int backen
 
   if (hc_fopen (&fp, path, "r") == false)
   {
-    event_log_error (hashcat_ctx, "%s: %s", path, strerror (errno));
+    event_log_error (hashcat_ctx, "%s: %s", path, hc_fopen_strerror ());
 
     hcfree (path);
 
@@ -246,7 +273,7 @@ int hm_SYSFS_AMDGPU_get_pp_dpm_sclk (void *hashcat_ctx, const int backend_device
 
   if (hc_fopen (&fp, path, "r") == false)
   {
-    event_log_error (hashcat_ctx, "%s: %s", path, strerror (errno));
+    event_log_error (hashcat_ctx, "%s: %s", path, hc_fopen_strerror ());
 
     hcfree (path);
 
@@ -261,7 +288,13 @@ int hm_SYSFS_AMDGPU_get_pp_dpm_sclk (void *hashcat_ctx, const int backend_device
 
     char *ptr = hc_fgets (buf, sizeof (buf), &fp);
 
-    if (ptr == NULL) continue;
+    // Leave the loop on a NULL rather than going round again. The loop condition only tests for the
+    // end of the file, and it is tested before the read, so the last read of a file that ended
+    // cleanly lands here too and must not be treated as a fault. What it must not do is carry on:
+    // amdgpu answers EBUSY on these files while the device is busy, which more than one process
+    // polling them hits easily, and reading again just repeats the same error forever.
+
+    if (ptr == NULL) break;
 
     size_t len = strlen (ptr);
 
@@ -301,7 +334,7 @@ int hm_SYSFS_AMDGPU_get_pp_dpm_mclk (void *hashcat_ctx, const int backend_device
 
   if (hc_fopen (&fp, path, "r") == false)
   {
-    event_log_error (hashcat_ctx, "%s: %s", path, strerror (errno));
+    event_log_error (hashcat_ctx, "%s: %s", path, hc_fopen_strerror ());
 
     hcfree (path);
 
@@ -316,7 +349,7 @@ int hm_SYSFS_AMDGPU_get_pp_dpm_mclk (void *hashcat_ctx, const int backend_device
 
     char *ptr = hc_fgets (buf, sizeof (buf), &fp);
 
-    if (ptr == NULL) continue;
+    if (ptr == NULL) break;
 
     size_t len = strlen (ptr);
 
@@ -356,7 +389,7 @@ int hm_SYSFS_AMDGPU_get_pp_dpm_pcie (void *hashcat_ctx, const int backend_device
 
   if (hc_fopen (&fp, path, "r") == false)
   {
-    event_log_error (hashcat_ctx, "%s: %s", path, strerror (errno));
+    event_log_error (hashcat_ctx, "%s: %s", path, hc_fopen_strerror ());
 
     hcfree (path);
 
@@ -371,7 +404,7 @@ int hm_SYSFS_AMDGPU_get_pp_dpm_pcie (void *hashcat_ctx, const int backend_device
 
     char *ptr = hc_fgets (buf, sizeof (buf), &fp);
 
-    if (ptr == NULL) continue;
+    if (ptr == NULL) break;
 
     size_t len = strlen (ptr);
 
@@ -387,6 +420,63 @@ int hm_SYSFS_AMDGPU_get_pp_dpm_pcie (void *hashcat_ctx, const int backend_device
   *val = lanes;
 
   hcfree (path);
+
+  return 0;
+}
+
+// The kernel reports the link speed rather than the generation, as "16.0 GT/s PCIe" or on older
+// kernels "8 GT/s". Each generation from the second on doubles the transfer rate, except that the
+// third moved to 8 GT/s with a leaner encoding.
+
+int hm_SYSFS_AMDGPU_get_pcie_gen (void *hashcat_ctx, const int backend_device_idx, int *val)
+{
+  char *syspath = hm_SYSFS_AMDGPU_get_syspath_device (hashcat_ctx, backend_device_idx);
+
+  if (syspath == NULL) return -1;
+
+  char *path;
+
+  hc_asprintf (&path, "%s/current_link_speed", syspath);
+
+  hcfree (syspath);
+
+  HCFILE fp;
+
+  if (hc_fopen (&fp, path, "r") == false)
+  {
+    event_log_error (hashcat_ctx, "%s: %s", path, hc_fopen_strerror ());
+
+    hcfree (path);
+
+    return -1;
+  }
+
+  char buf[HCBUFSIZ_TINY];
+
+  char *ptr = hc_fgets (buf, sizeof (buf), &fp);
+
+  hc_fclose (&fp);
+
+  hcfree (path);
+
+  if (ptr == NULL) return -1;
+
+  double speed = 0;
+
+  if (sscanf (ptr, "%lf", &speed) != 1) return -1;
+
+  int gen = 0;
+
+  if      (speed >= 64.0) gen = 6;
+  else if (speed >= 32.0) gen = 5;
+  else if (speed >= 16.0) gen = 4;
+  else if (speed >=  8.0) gen = 3;
+  else if (speed >=  5.0) gen = 2;
+  else if (speed >=  2.5) gen = 1;
+
+  if (gen == 0) return -1;
+
+  *val = gen;
 
   return 0;
 }
@@ -407,7 +497,7 @@ int hm_SYSFS_AMDGPU_get_gpu_busy_percent (void *hashcat_ctx, const int backend_d
 
   if (hc_fopen (&fp, path, "r") == false)
   {
-    event_log_error (hashcat_ctx, "%s: %s", path, strerror (errno));
+    event_log_error (hashcat_ctx, "%s: %s", path, hc_fopen_strerror ());
 
     hcfree (path);
 
@@ -422,7 +512,7 @@ int hm_SYSFS_AMDGPU_get_gpu_busy_percent (void *hashcat_ctx, const int backend_d
 
     char *ptr = hc_fgets (buf, sizeof (buf), &fp);
 
-    if (ptr == NULL) continue;
+    if (ptr == NULL) break;
 
     size_t len = strlen (ptr);
 
@@ -458,7 +548,7 @@ int hm_SYSFS_AMDGPU_get_mem_info_vram_used (void *hashcat_ctx, const int backend
 
   if (hc_fopen (&fp, path, "r") == false)
   {
-    event_log_error (hashcat_ctx, "%s: %s", path, strerror (errno));
+    event_log_error (hashcat_ctx, "%s: %s", path, hc_fopen_strerror ());
 
     hcfree (path);
 
@@ -473,7 +563,7 @@ int hm_SYSFS_AMDGPU_get_mem_info_vram_used (void *hashcat_ctx, const int backend
 
     char *ptr = hc_fgets (buf, sizeof (buf), &fp);
 
-    if (ptr == NULL) continue;
+    if (ptr == NULL) break;
 
     size_t len = strlen (ptr);
 

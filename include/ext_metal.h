@@ -10,17 +10,67 @@
 
 #include <objc/runtime.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <dispatch/dispatch.h>
 
 #define mtl_device_id id
 #define mtl_command_queue id
 #define mtl_function id
 #define mtl_pipeline id
-#define mtl_mem id
 #define mtl_library id
 #define mtl_command_buffer id
 #define mtl_command_encoder id
 #define mtl_blit_command_encoder id
 #define mtl_compute_command_encoder id
+#define mtl_command_allocator id
+#define mtl_argument_table id
+#define mtl_residency_set id
+#define mtl_compiler id
+#define mtl_archive id
+#define mtl_serializer id
+
+// The family levels supportsFamily: takes, and the two feature sets a runtime without it answers
+// instead. The values are the same in every SDK, and a system that does not know one answers NO.
+
+#define MTL_GPU_FAMILY_MAC1   2001
+#define MTL_GPU_FAMILY_MAC2   2002
+#define MTL_GPU_FAMILY_METAL3 5001
+#define MTL_GPU_FAMILY_METAL4 5002
+
+#define MTL_FEATURE_SET_MACOS_GPUFAMILY1_V1 10000
+#define MTL_FEATURE_SET_MACOS_GPUFAMILY2_V1 10005
+
+// What a MTL4PipelineDataSetSerializer captures: the binaries, which is what its archive is read for.
+
+#define MTL4_PIPELINE_DATA_SET_SERIALIZER_CAPTURE_BINARIES 2
+
+// Bytes a kernel takes by value go through one Shared buffer per device on Metal 4, where setBytes:
+// has no equivalent. Each argument starts on a 256 byte boundary, so this holds 16 of them, and no
+// launch passes more than seven.
+
+#define METAL4_SCRATCH_SIZE 4096
+
+typedef struct mtl_mem
+{
+  id buf_ptr;
+
+  unsigned int buf_mode;
+
+  // Whether the buffer reads the caller's own bytes or a copy of them. A host pointer is only taken
+  // on a Shared buffer, and the mode asked for is not always the mode given, so a caller that hands
+  // one over reads this afterwards rather than working out beforehand which it would be.
+
+  unsigned int buf_host;
+
+} mtl_mem_t;
+
+typedef enum metalResourceStorageMode
+{
+  MTL_STORAGE_MODE_PRIVATE = 0, // only the GPU can access
+  MTL_STORAGE_MODE_SHARED,      // both the CPU and the GPU can access
+  MTL_STORAGE_MODE_MANAGED,     // double allocations
+
+} metalResourceStorageMode_t;
+
 
 typedef enum metalDeviceAttribute
 {
@@ -32,7 +82,6 @@ typedef enum metalDeviceAttribute
   MTL_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK,
   MTL_DEVICE_ATTRIBUTE_CLOCK_RATE,
   MTL_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK,
-  MTL_DEVICE_ATTRIBUTE_TOTAL_CONSTANT_MEMORY,
   MTL_DEVICE_ATTRIBUTE_MAX_TRANSFER_RATE,
   MTL_DEVICE_ATTRIBUTE_HEADLESS,
   MTL_DEVICE_ATTRIBUTE_LOW_POWER,
@@ -40,6 +89,7 @@ typedef enum metalDeviceAttribute
   MTL_DEVICE_ATTRIBUTE_REGISTRY_ID,
   MTL_DEVICE_ATTRIBUTE_PHYSICAL_LOCATION,
   MTL_DEVICE_ATTRIBUTE_LOCATION_NUMBER,
+  MTL_DEVICE_ATTRIBUTE_METAL_VERSION,
 
 } metalDeviceAttribute_t;
 
@@ -71,47 +121,54 @@ typedef struct hc_metal
 
 typedef hc_metal_t MTL_PTR;
 
-int  mtl_init                       (void *hashcat_ctx);
-void mtl_close                      (void *hashcat_ctx);
+int  mtl_init                               (void *hashcat_ctx);
+void mtl_close                              (void *hashcat_ctx);
 
-int  hc_mtlRuntimeGetVersionString  (void *hashcat_ctx, char *runtimeVersion_str, size_t *size);
+int  hc_mtlRuntimeGetVersionString          (void *hashcat_ctx, char *runtimeVersion_str, size_t *size);
 
-int  hc_mtlDeviceGetCount           (void *hashcat_ctx, int *count);
-int  hc_mtlDeviceGet                (void *hashcat_ctx, mtl_device_id *metal_device, int ordinal);
-int  hc_mtlDeviceGetName            (void *hashcat_ctx, char *name, size_t len, mtl_device_id metal_device);
-int  hc_mtlDeviceGetAttribute       (void *hashcat_ctx, int *pi, metalDeviceAttribute_t attrib, mtl_device_id metal_device);
-int  hc_mtlDeviceTotalMem           (void *hashcat_ctx, size_t *bytes, mtl_device_id metal_device);
-int  hc_mtlDeviceMaxMemAlloc        (void *hashcat_ctx, size_t *bytes, mtl_device_id metal_device);
-int  hc_mtlMemGetInfo               (void *hashcat_ctx, size_t *mem_free, size_t *mem_total);
+int  hc_mtlDeviceGetCount                   (void *hashcat_ctx, int *count);
+int  hc_mtlDeviceGet                        (void *hashcat_ctx, mtl_device_id *metal_device, int ordinal);
+int  hc_mtlDeviceGetName                    (void *hashcat_ctx, char *name, size_t len, mtl_device_id metal_device);
+int  hc_mtlDeviceGetAttribute               (void *hashcat_ctx, int *pi, metalDeviceAttribute_t attrib, mtl_device_id metal_device);
+int  hc_mtlDeviceTotalMem                   (void *hashcat_ctx, size_t *bytes, mtl_device_id metal_device);
+int  hc_mtlDeviceMemFree                    (void *hashcat_ctx, size_t *bytes, mtl_device_id metal_device);
+int  hc_mtlDeviceMaxMemAlloc                (void *hashcat_ctx, size_t *bytes, mtl_device_id metal_device);
+int  hc_mtlMemGetInfo                       (void *hashcat_ctx, size_t *mem_free, size_t *mem_total);
 
-int  hc_mtlCreateCommandQueue       (void *hashcat_ctx, mtl_device_id metal_device, mtl_command_queue *command_queue);
-int  hc_mtlCreateBuffer             (void *hashcat_ctx, mtl_device_id metal_device, size_t size, void *ptr, mtl_mem *metal_buffer);
-
-int  hc_mtlCreateKernel             (void *hashcat_ctx, mtl_device_id metal_device, mtl_library metal_library, const char *func_name, mtl_function *metal_function, mtl_pipeline *metal_pipeline);
+int  hc_mtlCreateCommandQueue               (void *hashcat_ctx, void *device_param_ptr, mtl_device_id metal_device, mtl_command_queue *command_queue);
+int  hc_mtlCreateBuffer                     (void *hashcat_ctx, void *device_param_ptr, mtl_device_id metal_device, size_t size, void *ptr, mtl_mem_t *mem, metalResourceStorageMode_t metal_storage_mode);
+int  hc_mtlCreateKernel                     (void *hashcat_ctx, void *device_param_ptr, mtl_device_id metal_device, mtl_library metal_library, const int program, const int slot, const char *func_name, mtl_function *metal_function, mtl_pipeline *metal_pipeline);
 
 int  hc_mtlGetMaxTotalThreadsPerThreadgroup (void *hashcat_ctx, mtl_pipeline metal_pipeline, unsigned int *maxTotalThreadsPerThreadgroup);
-int  hc_mtlGetThreadExecutionWidth  (void *hashcat_ctx, mtl_pipeline metal_pipeline, unsigned int *threadExecutionWidth);
+int  hc_mtlGetThreadExecutionWidth          (void *hashcat_ctx, mtl_pipeline metal_pipeline, unsigned int *threadExecutionWidth);
+int  hc_mtlGetStaticThreadgroupMemoryLength (void *hashcat_ctx, mtl_pipeline metal_pipeline, unsigned int *staticThreadgroupMemoryLength);
 
 // copy buffer
-int  hc_mtlMemcpyDtoD               (void *hashcat_ctx, mtl_command_queue command_queue, mtl_mem buf_dst, size_t buf_dst_off, mtl_mem buf_src, size_t buf_src_off, size_t buf_size);
+int  hc_mtlMemcpyDtoD                       (void *hashcat_ctx, void *device_param_ptr, mtl_command_queue command_queue, mtl_mem_t mem_dst, size_t mem_dst_off, mtl_mem_t mem_src, size_t mem_src_off, size_t buf_size);
 // write
-int  hc_mtlMemcpyHtoD               (void *hashcat_ctx, mtl_command_queue command_queue, mtl_mem buf_dst, size_t buf_dst_off, const void *buf_src, size_t buf_size);
+int  hc_mtlMemcpyHtoD                       (void *hashcat_ctx, void *device_param_ptr, mtl_device_id metal_device, mtl_command_queue command_queue, mtl_mem_t mem_dst, size_t mem_dst_off, const void *mem_src, size_t buf_size);
 // read
-int  hc_mtlMemcpyDtoH               (void *hashcat_ctx, mtl_command_queue command_queue, void *buf_dst, mtl_mem buf_src, size_t buf_src_off, size_t buf_size);
+int  hc_mtlMemcpyDtoH                       (void *hashcat_ctx, void *device_param_ptr, mtl_device_id metal_device, mtl_command_queue command_queue, void *mem_dst, mtl_mem_t mem_src, size_t mem_src_off, size_t buf_size);
 
-int  hc_mtlReleaseMemObject         (void *hashcat_ctx, mtl_mem metal_buffer);
-int  hc_mtlReleaseFunction          (void *hashcat_ctx, mtl_function metal_function);
-int  hc_mtlReleaseLibrary           (void *hashcat_ctx, mtl_function metal_library);
-int  hc_mtlReleaseCommandQueue      (void *hashcat_ctx, mtl_command_queue command_queue);
-int  hc_mtlReleaseDevice            (void *hashcat_ctx, mtl_device_id metal_device);
+int  hc_mtlReleaseMemObject                 (void *hashcat_ctx, void *device_param_ptr, mtl_mem_t *metal_buffer);
+int  hc_mtlReleaseFunction                  (void *hashcat_ctx, mtl_function *metal_function);
+int  hc_mtlReleasePipeline                  (void *hashcat_ctx, mtl_pipeline *metal_pipeline);
+int  hc_mtlReleaseLibrary                   (void *hashcat_ctx, mtl_library *metal_library);
+int  hc_mtlReleaseCommandQueue              (void *hashcat_ctx, void *device_param_ptr, mtl_command_queue *command_queue);
 
-int  hc_mtlCreateLibraryWithSource  (void *hashcat_ctx, mtl_device_id metal_device, const char *kernel_sources, const char *build_options_buf, const char *include_path, mtl_library *metal_library);
-int  hc_mtlCreateLibraryWithFile    (void *hashcat_ctx, mtl_device_id metal_device, const char *cached_file, mtl_library *metal_library);
+int  hc_mtlCreateLibraryWithSource          (void *hashcat_ctx, void *device_param_ptr, mtl_device_id metal_device, const char *kernel_sources, const char *build_options_buf, const char *include_path, mtl_library *metal_library, const bool opt_size);
+char *hc_mtlOptSizeKernels                  (const char *cached_file, const bool cache_disable);
+int  hc_mtlArchiveOpen                      (void *hashcat_ctx, void *device_param_ptr, const int program, const char *cached_file, const bool cache_disable);
+void hc_mtlArchiveFlush                     (void *hashcat_ctx, void *device_param_ptr, const int program);
+void hc_mtlArchiveRelease                   (void *hashcat_ctx, void *device_param_ptr, const int program);
 
-int  hc_mtlEncodeComputeCommand_pre (void *hashcat_ctx, mtl_pipeline metal_pipeline, mtl_command_queue metal_command_queue, mtl_command_buffer *metal_command_buffer, mtl_command_encoder *metal_command_encoder);
-int  hc_mtlSetCommandEncoderArg     (void *hashcat_ctx, mtl_command_encoder metal_command_encoder, size_t off, size_t idx, mtl_mem buf, void *host_data, size_t host_data_size);
+int  hc_mtlEncodeComputeCommand_pre         (void *hashcat_ctx, void *device_param_ptr, mtl_pipeline metal_pipeline, mtl_command_queue metal_command_queue, mtl_command_buffer *metal_command_buffer, mtl_command_encoder *metal_command_encoder);
+int  hc_mtlSetCommandEncoderArg             (void *hashcat_ctx, void *device_param_ptr, mtl_command_encoder metal_command_encoder, size_t off, size_t idx, id buf, void *host_data, size_t host_data_size);
 
-int  hc_mtlEncodeComputeCommand     (void *hashcat_ctx, mtl_command_encoder metal_command_encoder, mtl_command_buffer metal_command_buffer, const unsigned int work_dim, const size_t global_work_size[3], const size_t local_work_size[3], double *ms);
+int  hc_mtlEncodeComputeCommand             (void *hashcat_ctx, void *device_param_ptr, mtl_command_encoder metal_command_encoder, mtl_command_buffer metal_command_buffer, const unsigned int work_dim, const size_t global_work_size[3], const size_t local_work_size[3], double *ms);
+int  hc_mtlEncodeComputeCommand_abort       (void *hashcat_ctx, void *device_param_ptr, mtl_command_encoder metal_command_encoder, mtl_command_buffer metal_command_buffer);
+
+int  hc_mtlFinish                           (void *hashcat_ctx, void *device_param_ptr, mtl_command_queue command_queue);
 
 #endif // __APPLE__
 

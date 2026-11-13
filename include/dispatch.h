@@ -22,7 +22,6 @@
 #endif
 #endif
 
-HC_API_CALL void *thread_calc_stdin (void *p);
-HC_API_CALL void *thread_calc (void *p);
+HC_THREAD_FUNC thread_calc (void *p);
 
 #endif // HC_DISPATCH_H

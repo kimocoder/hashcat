@@ -354,6 +354,93 @@ DECLSPEC void sha1_init (PRIVATE_AS sha1_ctx_t *ctx)
   ctx->len = 0;
 }
 
+#if defined IS_CUDA || defined IS_HIP
+
+DECLSPEC void sha1_update_64 (PRIVATE_AS sha1_ctx_t *ctx, PRIVATE_AS u32 *w0, PRIVATE_AS u32 *w1, PRIVATE_AS u32 *w2, PRIVATE_AS u32 *w3, const int len)
+{
+  if (len == 0) return;
+
+  const int pos = ctx->len & 63;
+
+  ctx->len += len;
+
+  u32 c0[4] = { 0 };
+  u32 c1[4] = { 0 };
+  u32 c2[4] = { 0 };
+  u32 c3[4] = { 0 };
+
+  if (pos == 0)
+  {
+    ctx->w0[0] = w0[0];
+    ctx->w0[1] = w0[1];
+    ctx->w0[2] = w0[2];
+    ctx->w0[3] = w0[3];
+    ctx->w1[0] = w1[0];
+    ctx->w1[1] = w1[1];
+    ctx->w1[2] = w1[2];
+    ctx->w1[3] = w1[3];
+    ctx->w2[0] = w2[0];
+    ctx->w2[1] = w2[1];
+    ctx->w2[2] = w2[2];
+    ctx->w2[3] = w2[3];
+    ctx->w3[0] = w3[0];
+    ctx->w3[1] = w3[1];
+    ctx->w3[2] = w3[2];
+    ctx->w3[3] = w3[3];
+  }
+  else
+  {
+    if ((pos + len) < 64)
+    {
+      switch_buffer_by_offset_be_S (w0, w1, w2, w3, pos);
+    }
+    else
+    {
+      switch_buffer_by_offset_carry_be_S (w0, w1, w2, w3, c0, c1, c2, c3, pos);
+    }
+
+    ctx->w0[0] |= w0[0];
+    ctx->w0[1] |= w0[1];
+    ctx->w0[2] |= w0[2];
+    ctx->w0[3] |= w0[3];
+    ctx->w1[0] |= w1[0];
+    ctx->w1[1] |= w1[1];
+    ctx->w1[2] |= w1[2];
+    ctx->w1[3] |= w1[3];
+    ctx->w2[0] |= w2[0];
+    ctx->w2[1] |= w2[1];
+    ctx->w2[2] |= w2[2];
+    ctx->w2[3] |= w2[3];
+    ctx->w3[0] |= w3[0];
+    ctx->w3[1] |= w3[1];
+    ctx->w3[2] |= w3[2];
+    ctx->w3[3] |= w3[3];
+  }
+
+  if ((pos + len) < 64) return;
+
+  sha1_transform (ctx->w0, ctx->w1, ctx->w2, ctx->w3, ctx->h);
+
+  ctx->w0[0] = c0[0];
+  ctx->w0[1] = c0[1];
+  ctx->w0[2] = c0[2];
+  ctx->w0[3] = c0[3];
+  ctx->w1[0] = c1[0];
+  ctx->w1[1] = c1[1];
+  ctx->w1[2] = c1[2];
+  ctx->w1[3] = c1[3];
+  ctx->w2[0] = c2[0];
+  ctx->w2[1] = c2[1];
+  ctx->w2[2] = c2[2];
+  ctx->w2[3] = c2[3];
+  ctx->w3[0] = c3[0];
+  ctx->w3[1] = c3[1];
+  ctx->w3[2] = c3[2];
+  ctx->w3[3] = c3[3];
+}
+
+#else
+
 DECLSPEC void sha1_update_64 (PRIVATE_AS sha1_ctx_t *ctx, PRIVATE_AS u32 *w0, PRIVATE_AS u32 *w1, PRIVATE_AS u32 *w2, PRIVATE_AS u32 *w3, const int len)
 {
   if (len == 0) return;
@@ -474,7 +561,88 @@ DECLSPEC void sha1_update_64 (PRIVATE_AS sha1_ctx_t *ctx, PRIVATE_AS u32 *w0, PR
   }
 }
 
+#endif
+
 DECLSPEC void sha1_update (PRIVATE_AS sha1_ctx_t *ctx, PRIVATE_AS const u32 *w, const int len)
+{
+  u32 w0[4];
+  u32 w1[4];
+  u32 w2[4];
+  u32 w3[4];
+
+  int pos1;
+  int pos4;
+
+  for (pos1 = 0, pos4 = 0; pos1 < len - 64; pos1 += 64, pos4 += 16)
+  {
+    w0[0] = w[pos4 +  0];
+    w0[1] = w[pos4 +  1];
+    w0[2] = w[pos4 +  2];
+    w0[3] = w[pos4 +  3];
+    w1[0] = w[pos4 +  4];
+    w1[1] = w[pos4 +  5];
+    w1[2] = w[pos4 +  6];
+    w1[3] = w[pos4 +  7];
+    w2[0] = w[pos4 +  8];
+    w2[1] = w[pos4 +  9];
+    w2[2] = w[pos4 + 10];
+    w2[3] = w[pos4 + 11];
+    w3[0] = w[pos4 + 12];
+    w3[1] = w[pos4 + 13];
+    w3[2] = w[pos4 + 14];
+    w3[3] = w[pos4 + 15];
+
+    sha1_update_64 (ctx, w0, w1, w2, w3, 64);
+  }
+
+  const int tail = len - pos1;
+
+  u32 t[16];
+
+  t[ 0] = hc_bounded_word_be_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_be_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_be_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_be_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_be_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_be_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_be_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_be_S (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_be_S (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_be_S (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_be_S (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_be_S (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_be_S (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_be_S (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_be_S (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_be_S (w, pos4 + 15, tail -  60);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
+  w2[0] = t[ 8];
+  w2[1] = t[ 9];
+  w2[2] = t[10];
+  w2[3] = t[11];
+  w3[0] = t[12];
+  w3[1] = t[13];
+  w3[2] = t[14];
+  w3[3] = t[15];
+
+  sha1_update_64 (ctx, w0, w1, w2, w3, len - pos1);
+}
+
+// sha1_update () for a caller whose buffer is zero padded to the end of the 64 byte block that len ends
+// in. Every read is then a plain load. A kernel that passes the same buffer on every round of a loop,
+// such as a salt, or the password of a slow hash, gets those loads out of the loop. The bounded reads
+// of sha1_update () stay inside it, because each one is conditional, and the kernel pays for all of
+// them on every round.
+
+DECLSPEC void sha1_update_padded (PRIVATE_AS sha1_ctx_t *ctx, PRIVATE_AS const u32 *w, const int len)
 {
   u32 w0[4];
   u32 w1[4];
@@ -575,39 +743,43 @@ DECLSPEC void sha1_update_swap (PRIVATE_AS sha1_ctx_t *ctx, PRIVATE_AS const u32
     sha1_update_64 (ctx, w0, w1, w2, w3, 64);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
+  const int tail = len - pos1;
 
-  w0[0] = hc_swap32_S (w0[0]);
-  w0[1] = hc_swap32_S (w0[1]);
-  w0[2] = hc_swap32_S (w0[2]);
-  w0[3] = hc_swap32_S (w0[3]);
-  w1[0] = hc_swap32_S (w1[0]);
-  w1[1] = hc_swap32_S (w1[1]);
-  w1[2] = hc_swap32_S (w1[2]);
-  w1[3] = hc_swap32_S (w1[3]);
-  w2[0] = hc_swap32_S (w2[0]);
-  w2[1] = hc_swap32_S (w2[1]);
-  w2[2] = hc_swap32_S (w2[2]);
-  w2[3] = hc_swap32_S (w2[3]);
-  w3[0] = hc_swap32_S (w3[0]);
-  w3[1] = hc_swap32_S (w3[1]);
-  w3[2] = hc_swap32_S (w3[2]);
-  w3[3] = hc_swap32_S (w3[3]);
+  u32 t[16];
+
+  t[ 0] = hc_bounded_word_le_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_le_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_le_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_le_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_le_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_le_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_le_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_le_S (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_le_S (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_le_S (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_le_S (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_le_S (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_le_S (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_le_S (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_le_S (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_le_S (w, pos4 + 15, tail -  60);
+
+  w0[0] = hc_swap32_S (t[ 0]);
+  w0[1] = hc_swap32_S (t[ 1]);
+  w0[2] = hc_swap32_S (t[ 2]);
+  w0[3] = hc_swap32_S (t[ 3]);
+  w1[0] = hc_swap32_S (t[ 4]);
+  w1[1] = hc_swap32_S (t[ 5]);
+  w1[2] = hc_swap32_S (t[ 6]);
+  w1[3] = hc_swap32_S (t[ 7]);
+  w2[0] = hc_swap32_S (t[ 8]);
+  w2[1] = hc_swap32_S (t[ 9]);
+  w2[2] = hc_swap32_S (t[10]);
+  w2[3] = hc_swap32_S (t[11]);
+  w3[0] = hc_swap32_S (t[12]);
+  w3[1] = hc_swap32_S (t[13]);
+  w3[2] = hc_swap32_S (t[14]);
+  w3[3] = hc_swap32_S (t[15]);
 
   sha1_update_64 (ctx, w0, w1, w2, w3, len - pos1);
 }
@@ -664,14 +836,27 @@ DECLSPEC void sha1_update_utf16le (PRIVATE_AS sha1_ctx_t *ctx, PRIVATE_AS const 
     sha1_update_64 (ctx, w0, w1, w2, w3, 32 * 2);
   }
 
-  w0[0] = w[pos4 + 0];
-  w0[1] = w[pos4 + 1];
-  w0[2] = w[pos4 + 2];
-  w0[3] = w[pos4 + 3];
-  w1[0] = w[pos4 + 4];
-  w1[1] = w[pos4 + 5];
-  w1[2] = w[pos4 + 6];
-  w1[3] = w[pos4 + 7];
+  const int tail = len - pos1;
+
+  u32 t[8];
+
+  t[ 0] = hc_bounded_word_be_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_be_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_be_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_be_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_be_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_be_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_be_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_be_S (w, pos4 +  7, tail -  28);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
 
   make_utf16le_S (w1, w2, w3);
   make_utf16le_S (w0, w0, w1);
@@ -765,14 +950,27 @@ DECLSPEC void sha1_update_utf16le_swap (PRIVATE_AS sha1_ctx_t *ctx, PRIVATE_AS c
     sha1_update_64 (ctx, w0, w1, w2, w3, 32 * 2);
   }
 
-  w0[0] = w[pos4 + 0];
-  w0[1] = w[pos4 + 1];
-  w0[2] = w[pos4 + 2];
-  w0[3] = w[pos4 + 3];
-  w1[0] = w[pos4 + 4];
-  w1[1] = w[pos4 + 5];
-  w1[2] = w[pos4 + 6];
-  w1[3] = w[pos4 + 7];
+  const int tail = len - pos1;
+
+  u32 t[8];
+
+  t[ 0] = hc_bounded_word_le_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_le_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_le_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_le_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_le_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_le_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_le_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_le_S (w, pos4 +  7, tail -  28);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
 
   make_utf16le_S (w1, w2, w3);
   make_utf16le_S (w0, w0, w1);
@@ -824,14 +1022,27 @@ DECLSPEC void sha1_update_utf16be (PRIVATE_AS sha1_ctx_t *ctx, PRIVATE_AS const 
     sha1_update_64 (ctx, w0, w1, w2, w3, 32 * 2);
   }
 
-  w0[0] = w[pos4 + 0];
-  w0[1] = w[pos4 + 1];
-  w0[2] = w[pos4 + 2];
-  w0[3] = w[pos4 + 3];
-  w1[0] = w[pos4 + 4];
-  w1[1] = w[pos4 + 5];
-  w1[2] = w[pos4 + 6];
-  w1[3] = w[pos4 + 7];
+  const int tail = len - pos1;
+
+  u32 t[8];
+
+  t[ 0] = hc_bounded_word_be_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_be_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_be_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_be_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_be_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_be_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_be_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_be_S (w, pos4 +  7, tail -  28);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
 
   make_utf16be_S (w1, w2, w3);
   make_utf16be_S (w0, w0, w1);
@@ -866,14 +1077,27 @@ DECLSPEC void sha1_update_utf16beN (PRIVATE_AS sha1_ctx_t *ctx, PRIVATE_AS const
     sha1_update_64 (ctx, w0, w1, w2, w3, 32 * 2);
   }
 
-  w0[0] = w[pos4 + 0];
-  w0[1] = w[pos4 + 1];
-  w0[2] = w[pos4 + 2];
-  w0[3] = w[pos4 + 3];
-  w1[0] = w[pos4 + 4];
-  w1[1] = w[pos4 + 5];
-  w1[2] = w[pos4 + 6];
-  w1[3] = w[pos4 + 7];
+  const int tail = len - pos1;
+
+  u32 t[8];
+
+  t[ 0] = hc_bounded_word_be_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_be_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_be_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_be_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_be_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_be_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_be_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_be_S (w, pos4 +  7, tail -  28);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
 
   make_utf16beN_S (w1, w2, w3);
   make_utf16beN_S (w0, w0, w1);
@@ -925,14 +1149,27 @@ DECLSPEC void sha1_update_utf16be_swap (PRIVATE_AS sha1_ctx_t *ctx, PRIVATE_AS c
     sha1_update_64 (ctx, w0, w1, w2, w3, 32 * 2);
   }
 
-  w0[0] = w[pos4 + 0];
-  w0[1] = w[pos4 + 1];
-  w0[2] = w[pos4 + 2];
-  w0[3] = w[pos4 + 3];
-  w1[0] = w[pos4 + 4];
-  w1[1] = w[pos4 + 5];
-  w1[2] = w[pos4 + 6];
-  w1[3] = w[pos4 + 7];
+  const int tail = len - pos1;
+
+  u32 t[8];
+
+  t[ 0] = hc_bounded_word_le_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_le_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_le_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_le_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_le_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_le_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_le_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_le_S (w, pos4 +  7, tail -  28);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
 
   make_utf16be_S (w1, w2, w3);
   make_utf16be_S (w0, w0, w1);
@@ -989,22 +1226,120 @@ DECLSPEC void sha1_update_global (PRIVATE_AS sha1_ctx_t *ctx, GLOBAL_AS const u3
     sha1_update_64 (ctx, w0, w1, w2, w3, 64);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
+  const int tail = len - pos1;
+
+  u32 t[16];
+
+  t[ 0] = hc_bounded_word_global_be_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_global_be_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_global_be_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_global_be_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_global_be_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_global_be_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_global_be_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_global_be_S (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_global_be_S (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_global_be_S (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_global_be_S (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_global_be_S (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_global_be_S (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_global_be_S (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_global_be_S (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_global_be_S (w, pos4 + 15, tail -  60);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
+  w2[0] = t[ 8];
+  w2[1] = t[ 9];
+  w2[2] = t[10];
+  w2[3] = t[11];
+  w3[0] = t[12];
+  w3[1] = t[13];
+  w3[2] = t[14];
+  w3[3] = t[15];
+
+  sha1_update_64 (ctx, w0, w1, w2, w3, len - pos1);
+}
+
+// The caller holds its words with the low byte first, and wants them fed to the transform
+// without a swap. Only the tail differs from sha1_update_global: the bytes past the end of
+// the message sit at the high end of the last word, so the mask has to come from that side.
+
+DECLSPEC void sha1_update_global_le (PRIVATE_AS sha1_ctx_t *ctx, GLOBAL_AS const u32 *w, const int len)
+{
+  u32 w0[4];
+  u32 w1[4];
+  u32 w2[4];
+  u32 w3[4];
+
+  int pos1;
+  int pos4;
+
+  for (pos1 = 0, pos4 = 0; pos1 < len - 64; pos1 += 64, pos4 += 16)
+  {
+    w0[0] = w[pos4 +  0];
+    w0[1] = w[pos4 +  1];
+    w0[2] = w[pos4 +  2];
+    w0[3] = w[pos4 +  3];
+    w1[0] = w[pos4 +  4];
+    w1[1] = w[pos4 +  5];
+    w1[2] = w[pos4 +  6];
+    w1[3] = w[pos4 +  7];
+    w2[0] = w[pos4 +  8];
+    w2[1] = w[pos4 +  9];
+    w2[2] = w[pos4 + 10];
+    w2[3] = w[pos4 + 11];
+    w3[0] = w[pos4 + 12];
+    w3[1] = w[pos4 + 13];
+    w3[2] = w[pos4 + 14];
+    w3[3] = w[pos4 + 15];
+
+    sha1_update_64 (ctx, w0, w1, w2, w3, 64);
+  }
+
+  const int tail = len - pos1;
+
+  u32 t[16];
+
+  t[ 0] = hc_bounded_word_global_le_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_global_le_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_global_le_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_global_le_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_global_le_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_global_le_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_global_le_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_global_le_S (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_global_le_S (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_global_le_S (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_global_le_S (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_global_le_S (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_global_le_S (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_global_le_S (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_global_le_S (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_global_le_S (w, pos4 + 15, tail -  60);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
+  w2[0] = t[ 8];
+  w2[1] = t[ 9];
+  w2[2] = t[10];
+  w2[3] = t[11];
+  w3[0] = t[12];
+  w3[1] = t[13];
+  w3[2] = t[14];
+  w3[3] = t[15];
 
   sha1_update_64 (ctx, w0, w1, w2, w3, len - pos1);
 }
@@ -1058,39 +1393,43 @@ DECLSPEC void sha1_update_global_swap (PRIVATE_AS sha1_ctx_t *ctx, GLOBAL_AS con
     sha1_update_64 (ctx, w0, w1, w2, w3, 64);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
+  const int tail = len - pos1;
 
-  w0[0] = hc_swap32_S (w0[0]);
-  w0[1] = hc_swap32_S (w0[1]);
-  w0[2] = hc_swap32_S (w0[2]);
-  w0[3] = hc_swap32_S (w0[3]);
-  w1[0] = hc_swap32_S (w1[0]);
-  w1[1] = hc_swap32_S (w1[1]);
-  w1[2] = hc_swap32_S (w1[2]);
-  w1[3] = hc_swap32_S (w1[3]);
-  w2[0] = hc_swap32_S (w2[0]);
-  w2[1] = hc_swap32_S (w2[1]);
-  w2[2] = hc_swap32_S (w2[2]);
-  w2[3] = hc_swap32_S (w2[3]);
-  w3[0] = hc_swap32_S (w3[0]);
-  w3[1] = hc_swap32_S (w3[1]);
-  w3[2] = hc_swap32_S (w3[2]);
-  w3[3] = hc_swap32_S (w3[3]);
+  u32 t[16];
+
+  t[ 0] = hc_bounded_word_global_le_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_global_le_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_global_le_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_global_le_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_global_le_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_global_le_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_global_le_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_global_le_S (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_global_le_S (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_global_le_S (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_global_le_S (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_global_le_S (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_global_le_S (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_global_le_S (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_global_le_S (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_global_le_S (w, pos4 + 15, tail -  60);
+
+  w0[0] = hc_swap32_S (t[ 0]);
+  w0[1] = hc_swap32_S (t[ 1]);
+  w0[2] = hc_swap32_S (t[ 2]);
+  w0[3] = hc_swap32_S (t[ 3]);
+  w1[0] = hc_swap32_S (t[ 4]);
+  w1[1] = hc_swap32_S (t[ 5]);
+  w1[2] = hc_swap32_S (t[ 6]);
+  w1[3] = hc_swap32_S (t[ 7]);
+  w2[0] = hc_swap32_S (t[ 8]);
+  w2[1] = hc_swap32_S (t[ 9]);
+  w2[2] = hc_swap32_S (t[10]);
+  w2[3] = hc_swap32_S (t[11]);
+  w3[0] = hc_swap32_S (t[12]);
+  w3[1] = hc_swap32_S (t[13]);
+  w3[2] = hc_swap32_S (t[14]);
+  w3[3] = hc_swap32_S (t[15]);
 
   sha1_update_64 (ctx, w0, w1, w2, w3, len - pos1);
 }
@@ -1147,14 +1486,27 @@ DECLSPEC void sha1_update_global_utf16le (PRIVATE_AS sha1_ctx_t *ctx, GLOBAL_AS 
     sha1_update_64 (ctx, w0, w1, w2, w3, 32 * 2);
   }
 
-  w0[0] = w[pos4 + 0];
-  w0[1] = w[pos4 + 1];
-  w0[2] = w[pos4 + 2];
-  w0[3] = w[pos4 + 3];
-  w1[0] = w[pos4 + 4];
-  w1[1] = w[pos4 + 5];
-  w1[2] = w[pos4 + 6];
-  w1[3] = w[pos4 + 7];
+  const int tail = len - pos1;
+
+  u32 t[8];
+
+  t[ 0] = hc_bounded_word_global_be_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_global_be_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_global_be_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_global_be_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_global_be_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_global_be_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_global_be_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_global_be_S (w, pos4 +  7, tail -  28);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
 
   make_utf16le_S (w1, w2, w3);
   make_utf16le_S (w0, w0, w1);
@@ -1248,14 +1600,27 @@ DECLSPEC void sha1_update_global_utf16le_swap (PRIVATE_AS sha1_ctx_t *ctx, GLOBA
     sha1_update_64 (ctx, w0, w1, w2, w3, 32 * 2);
   }
 
-  w0[0] = w[pos4 + 0];
-  w0[1] = w[pos4 + 1];
-  w0[2] = w[pos4 + 2];
-  w0[3] = w[pos4 + 3];
-  w1[0] = w[pos4 + 4];
-  w1[1] = w[pos4 + 5];
-  w1[2] = w[pos4 + 6];
-  w1[3] = w[pos4 + 7];
+  const int tail = len - pos1;
+
+  u32 t[8];
+
+  t[ 0] = hc_bounded_word_global_le_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_global_le_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_global_le_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_global_le_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_global_le_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_global_le_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_global_le_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_global_le_S (w, pos4 +  7, tail -  28);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
 
   make_utf16le_S (w1, w2, w3);
   make_utf16le_S (w0, w0, w1);
@@ -1307,14 +1672,27 @@ DECLSPEC void sha1_update_global_utf16be (PRIVATE_AS sha1_ctx_t *ctx, GLOBAL_AS 
     sha1_update_64 (ctx, w0, w1, w2, w3, 32 * 2);
   }
 
-  w0[0] = w[pos4 + 0];
-  w0[1] = w[pos4 + 1];
-  w0[2] = w[pos4 + 2];
-  w0[3] = w[pos4 + 3];
-  w1[0] = w[pos4 + 4];
-  w1[1] = w[pos4 + 5];
-  w1[2] = w[pos4 + 6];
-  w1[3] = w[pos4 + 7];
+  const int tail = len - pos1;
+
+  u32 t[8];
+
+  t[ 0] = hc_bounded_word_global_be_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_global_be_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_global_be_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_global_be_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_global_be_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_global_be_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_global_be_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_global_be_S (w, pos4 +  7, tail -  28);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
 
   make_utf16be_S (w1, w2, w3);
   make_utf16be_S (w0, w0, w1);
@@ -1366,14 +1744,27 @@ DECLSPEC void sha1_update_global_utf16be_swap (PRIVATE_AS sha1_ctx_t *ctx, GLOBA
     sha1_update_64 (ctx, w0, w1, w2, w3, 32 * 2);
   }
 
-  w0[0] = w[pos4 + 0];
-  w0[1] = w[pos4 + 1];
-  w0[2] = w[pos4 + 2];
-  w0[3] = w[pos4 + 3];
-  w1[0] = w[pos4 + 4];
-  w1[1] = w[pos4 + 5];
-  w1[2] = w[pos4 + 6];
-  w1[3] = w[pos4 + 7];
+  const int tail = len - pos1;
+
+  u32 t[8];
+
+  t[ 0] = hc_bounded_word_global_le_S (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_global_le_S (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_global_le_S (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_global_le_S (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_global_le_S (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_global_le_S (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_global_le_S (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_global_le_S (w, pos4 +  7, tail -  28);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
 
   make_utf16be_S (w1, w2, w3);
   make_utf16be_S (w0, w0, w1);
@@ -1529,22 +1920,43 @@ DECLSPEC void sha1_hmac_init (PRIVATE_AS sha1_hmac_ctx_t *ctx, PRIVATE_AS const 
   }
   else
   {
-    w0[0] = w[ 0];
-    w0[1] = w[ 1];
-    w0[2] = w[ 2];
-    w0[3] = w[ 3];
-    w1[0] = w[ 4];
-    w1[1] = w[ 5];
-    w1[2] = w[ 6];
-    w1[3] = w[ 7];
-    w2[0] = w[ 8];
-    w2[1] = w[ 9];
-    w2[2] = w[10];
-    w2[3] = w[11];
-    w3[0] = w[12];
-    w3[1] = w[13];
-    w3[2] = w[14];
-    w3[3] = w[15];
+    const int tail = len;
+
+    u32 t[16];
+
+    t[ 0] = hc_bounded_word_be_S (w,  0, tail -   0);
+    t[ 1] = hc_bounded_word_be_S (w,  1, tail -   4);
+    t[ 2] = hc_bounded_word_be_S (w,  2, tail -   8);
+    t[ 3] = hc_bounded_word_be_S (w,  3, tail -  12);
+    t[ 4] = hc_bounded_word_be_S (w,  4, tail -  16);
+    t[ 5] = hc_bounded_word_be_S (w,  5, tail -  20);
+    t[ 6] = hc_bounded_word_be_S (w,  6, tail -  24);
+    t[ 7] = hc_bounded_word_be_S (w,  7, tail -  28);
+    t[ 8] = hc_bounded_word_be_S (w,  8, tail -  32);
+    t[ 9] = hc_bounded_word_be_S (w,  9, tail -  36);
+    t[10] = hc_bounded_word_be_S (w, 10, tail -  40);
+    t[11] = hc_bounded_word_be_S (w, 11, tail -  44);
+    t[12] = hc_bounded_word_be_S (w, 12, tail -  48);
+    t[13] = hc_bounded_word_be_S (w, 13, tail -  52);
+    t[14] = hc_bounded_word_be_S (w, 14, tail -  56);
+    t[15] = hc_bounded_word_be_S (w, 15, tail -  60);
+
+    w0[0] = t[ 0];
+    w0[1] = t[ 1];
+    w0[2] = t[ 2];
+    w0[3] = t[ 3];
+    w1[0] = t[ 4];
+    w1[1] = t[ 5];
+    w1[2] = t[ 6];
+    w1[3] = t[ 7];
+    w2[0] = t[ 8];
+    w2[1] = t[ 9];
+    w2[2] = t[10];
+    w2[3] = t[11];
+    w3[0] = t[12];
+    w3[1] = t[13];
+    w3[2] = t[14];
+    w3[3] = t[15];
   }
 
   sha1_hmac_init_64 (ctx, w0, w1, w2, w3);
@@ -1586,22 +1998,43 @@ DECLSPEC void sha1_hmac_init_swap (PRIVATE_AS sha1_hmac_ctx_t *ctx, PRIVATE_AS c
   }
   else
   {
-    w0[0] = hc_swap32_S (w[ 0]);
-    w0[1] = hc_swap32_S (w[ 1]);
-    w0[2] = hc_swap32_S (w[ 2]);
-    w0[3] = hc_swap32_S (w[ 3]);
-    w1[0] = hc_swap32_S (w[ 4]);
-    w1[1] = hc_swap32_S (w[ 5]);
-    w1[2] = hc_swap32_S (w[ 6]);
-    w1[3] = hc_swap32_S (w[ 7]);
-    w2[0] = hc_swap32_S (w[ 8]);
-    w2[1] = hc_swap32_S (w[ 9]);
-    w2[2] = hc_swap32_S (w[10]);
-    w2[3] = hc_swap32_S (w[11]);
-    w3[0] = hc_swap32_S (w[12]);
-    w3[1] = hc_swap32_S (w[13]);
-    w3[2] = hc_swap32_S (w[14]);
-    w3[3] = hc_swap32_S (w[15]);
+    const int tail = len;
+
+    u32 t[16];
+
+    t[ 0] = hc_bounded_word_le_S (w,  0, tail -   0);
+    t[ 1] = hc_bounded_word_le_S (w,  1, tail -   4);
+    t[ 2] = hc_bounded_word_le_S (w,  2, tail -   8);
+    t[ 3] = hc_bounded_word_le_S (w,  3, tail -  12);
+    t[ 4] = hc_bounded_word_le_S (w,  4, tail -  16);
+    t[ 5] = hc_bounded_word_le_S (w,  5, tail -  20);
+    t[ 6] = hc_bounded_word_le_S (w,  6, tail -  24);
+    t[ 7] = hc_bounded_word_le_S (w,  7, tail -  28);
+    t[ 8] = hc_bounded_word_le_S (w,  8, tail -  32);
+    t[ 9] = hc_bounded_word_le_S (w,  9, tail -  36);
+    t[10] = hc_bounded_word_le_S (w, 10, tail -  40);
+    t[11] = hc_bounded_word_le_S (w, 11, tail -  44);
+    t[12] = hc_bounded_word_le_S (w, 12, tail -  48);
+    t[13] = hc_bounded_word_le_S (w, 13, tail -  52);
+    t[14] = hc_bounded_word_le_S (w, 14, tail -  56);
+    t[15] = hc_bounded_word_le_S (w, 15, tail -  60);
+
+    w0[0] = hc_swap32_S (t[ 0]);
+    w0[1] = hc_swap32_S (t[ 1]);
+    w0[2] = hc_swap32_S (t[ 2]);
+    w0[3] = hc_swap32_S (t[ 3]);
+    w1[0] = hc_swap32_S (t[ 4]);
+    w1[1] = hc_swap32_S (t[ 5]);
+    w1[2] = hc_swap32_S (t[ 6]);
+    w1[3] = hc_swap32_S (t[ 7]);
+    w2[0] = hc_swap32_S (t[ 8]);
+    w2[1] = hc_swap32_S (t[ 9]);
+    w2[2] = hc_swap32_S (t[10]);
+    w2[3] = hc_swap32_S (t[11]);
+    w3[0] = hc_swap32_S (t[12]);
+    w3[1] = hc_swap32_S (t[13]);
+    w3[2] = hc_swap32_S (t[14]);
+    w3[3] = hc_swap32_S (t[15]);
   }
 
   sha1_hmac_init_64 (ctx, w0, w1, w2, w3);
@@ -1643,22 +2076,43 @@ DECLSPEC void sha1_hmac_init_global (PRIVATE_AS sha1_hmac_ctx_t *ctx, GLOBAL_AS 
   }
   else
   {
-    w0[0] = w[ 0];
-    w0[1] = w[ 1];
-    w0[2] = w[ 2];
-    w0[3] = w[ 3];
-    w1[0] = w[ 4];
-    w1[1] = w[ 5];
-    w1[2] = w[ 6];
-    w1[3] = w[ 7];
-    w2[0] = w[ 8];
-    w2[1] = w[ 9];
-    w2[2] = w[10];
-    w2[3] = w[11];
-    w3[0] = w[12];
-    w3[1] = w[13];
-    w3[2] = w[14];
-    w3[3] = w[15];
+    const int tail = len;
+
+    u32 t[16];
+
+    t[ 0] = hc_bounded_word_global_be_S (w,  0, tail -   0);
+    t[ 1] = hc_bounded_word_global_be_S (w,  1, tail -   4);
+    t[ 2] = hc_bounded_word_global_be_S (w,  2, tail -   8);
+    t[ 3] = hc_bounded_word_global_be_S (w,  3, tail -  12);
+    t[ 4] = hc_bounded_word_global_be_S (w,  4, tail -  16);
+    t[ 5] = hc_bounded_word_global_be_S (w,  5, tail -  20);
+    t[ 6] = hc_bounded_word_global_be_S (w,  6, tail -  24);
+    t[ 7] = hc_bounded_word_global_be_S (w,  7, tail -  28);
+    t[ 8] = hc_bounded_word_global_be_S (w,  8, tail -  32);
+    t[ 9] = hc_bounded_word_global_be_S (w,  9, tail -  36);
+    t[10] = hc_bounded_word_global_be_S (w, 10, tail -  40);
+    t[11] = hc_bounded_word_global_be_S (w, 11, tail -  44);
+    t[12] = hc_bounded_word_global_be_S (w, 12, tail -  48);
+    t[13] = hc_bounded_word_global_be_S (w, 13, tail -  52);
+    t[14] = hc_bounded_word_global_be_S (w, 14, tail -  56);
+    t[15] = hc_bounded_word_global_be_S (w, 15, tail -  60);
+
+    w0[0] = t[ 0];
+    w0[1] = t[ 1];
+    w0[2] = t[ 2];
+    w0[3] = t[ 3];
+    w1[0] = t[ 4];
+    w1[1] = t[ 5];
+    w1[2] = t[ 6];
+    w1[3] = t[ 7];
+    w2[0] = t[ 8];
+    w2[1] = t[ 9];
+    w2[2] = t[10];
+    w2[3] = t[11];
+    w3[0] = t[12];
+    w3[1] = t[13];
+    w3[2] = t[14];
+    w3[3] = t[15];
   }
 
   sha1_hmac_init_64 (ctx, w0, w1, w2, w3);
@@ -1700,22 +2154,43 @@ DECLSPEC void sha1_hmac_init_global_swap (PRIVATE_AS sha1_hmac_ctx_t *ctx, GLOBA
   }
   else
   {
-    w0[0] = hc_swap32_S (w[ 0]);
-    w0[1] = hc_swap32_S (w[ 1]);
-    w0[2] = hc_swap32_S (w[ 2]);
-    w0[3] = hc_swap32_S (w[ 3]);
-    w1[0] = hc_swap32_S (w[ 4]);
-    w1[1] = hc_swap32_S (w[ 5]);
-    w1[2] = hc_swap32_S (w[ 6]);
-    w1[3] = hc_swap32_S (w[ 7]);
-    w2[0] = hc_swap32_S (w[ 8]);
-    w2[1] = hc_swap32_S (w[ 9]);
-    w2[2] = hc_swap32_S (w[10]);
-    w2[3] = hc_swap32_S (w[11]);
-    w3[0] = hc_swap32_S (w[12]);
-    w3[1] = hc_swap32_S (w[13]);
-    w3[2] = hc_swap32_S (w[14]);
-    w3[3] = hc_swap32_S (w[15]);
+    const int tail = len;
+
+    u32 t[16];
+
+    t[ 0] = hc_bounded_word_global_le_S (w,  0, tail -   0);
+    t[ 1] = hc_bounded_word_global_le_S (w,  1, tail -   4);
+    t[ 2] = hc_bounded_word_global_le_S (w,  2, tail -   8);
+    t[ 3] = hc_bounded_word_global_le_S (w,  3, tail -  12);
+    t[ 4] = hc_bounded_word_global_le_S (w,  4, tail -  16);
+    t[ 5] = hc_bounded_word_global_le_S (w,  5, tail -  20);
+    t[ 6] = hc_bounded_word_global_le_S (w,  6, tail -  24);
+    t[ 7] = hc_bounded_word_global_le_S (w,  7, tail -  28);
+    t[ 8] = hc_bounded_word_global_le_S (w,  8, tail -  32);
+    t[ 9] = hc_bounded_word_global_le_S (w,  9, tail -  36);
+    t[10] = hc_bounded_word_global_le_S (w, 10, tail -  40);
+    t[11] = hc_bounded_word_global_le_S (w, 11, tail -  44);
+    t[12] = hc_bounded_word_global_le_S (w, 12, tail -  48);
+    t[13] = hc_bounded_word_global_le_S (w, 13, tail -  52);
+    t[14] = hc_bounded_word_global_le_S (w, 14, tail -  56);
+    t[15] = hc_bounded_word_global_le_S (w, 15, tail -  60);
+
+    w0[0] = hc_swap32_S (t[ 0]);
+    w0[1] = hc_swap32_S (t[ 1]);
+    w0[2] = hc_swap32_S (t[ 2]);
+    w0[3] = hc_swap32_S (t[ 3]);
+    w1[0] = hc_swap32_S (t[ 4]);
+    w1[1] = hc_swap32_S (t[ 5]);
+    w1[2] = hc_swap32_S (t[ 6]);
+    w1[3] = hc_swap32_S (t[ 7]);
+    w2[0] = hc_swap32_S (t[ 8]);
+    w2[1] = hc_swap32_S (t[ 9]);
+    w2[2] = hc_swap32_S (t[10]);
+    w2[3] = hc_swap32_S (t[11]);
+    w3[0] = hc_swap32_S (t[12]);
+    w3[1] = hc_swap32_S (t[13]);
+    w3[2] = hc_swap32_S (t[14]);
+    w3[3] = hc_swap32_S (t[15]);
   }
 
   sha1_hmac_init_64 (ctx, w0, w1, w2, w3);
@@ -1733,7 +2208,7 @@ DECLSPEC void sha1_hmac_init_global_utf16le_swap (PRIVATE_AS sha1_hmac_ctx_t *ct
     {
       // forced full decode in one round
 
-      u32 enc_buf[256];
+      u32 enc_buf[256] = { 0 };
 
       const int enc_len = hc_enc_next_global (&hc_enc, w, len, 256, enc_buf, sizeof (enc_buf));
 
@@ -1751,7 +2226,7 @@ DECLSPEC void sha1_hmac_init_global_utf16le_swap (PRIVATE_AS sha1_hmac_ctx_t *ct
 
         sha1_init (&tmp);
 
-        sha1_update_utf16le_swap (&tmp, enc_buf, enc_len);
+        sha1_update_swap (&tmp, enc_buf, enc_len);
 
         sha1_final (&tmp);
 
@@ -1834,14 +2309,27 @@ DECLSPEC void sha1_hmac_init_global_utf16le_swap (PRIVATE_AS sha1_hmac_ctx_t *ct
   }
   else
   {
-    w0[0] = w[0];
-    w0[1] = w[1];
-    w0[2] = w[2];
-    w0[3] = w[3];
-    w1[0] = w[4];
-    w1[1] = w[5];
-    w1[2] = w[6];
-    w1[3] = w[7];
+    const int tail = len;
+
+    u32 t[8];
+
+    t[ 0] = hc_bounded_word_global_le_S (w,  0, tail -   0);
+    t[ 1] = hc_bounded_word_global_le_S (w,  1, tail -   4);
+    t[ 2] = hc_bounded_word_global_le_S (w,  2, tail -   8);
+    t[ 3] = hc_bounded_word_global_le_S (w,  3, tail -  12);
+    t[ 4] = hc_bounded_word_global_le_S (w,  4, tail -  16);
+    t[ 5] = hc_bounded_word_global_le_S (w,  5, tail -  20);
+    t[ 6] = hc_bounded_word_global_le_S (w,  6, tail -  24);
+    t[ 7] = hc_bounded_word_global_le_S (w,  7, tail -  28);
+
+    w0[0] = t[ 0];
+    w0[1] = t[ 1];
+    w0[2] = t[ 2];
+    w0[3] = t[ 3];
+    w1[0] = t[ 4];
+    w1[1] = t[ 5];
+    w1[2] = t[ 6];
+    w1[3] = t[ 7];
 
     make_utf16le_S (w1, w2, w3);
     make_utf16le_S (w0, w0, w1);
@@ -2462,22 +2950,43 @@ DECLSPEC void sha1_update_vector (PRIVATE_AS sha1_ctx_vector_t *ctx, PRIVATE_AS 
     sha1_update_vector_64 (ctx, w0, w1, w2, w3, 64);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
+  const int tail = len - pos1;
+
+  u32x t[16];
+
+  t[ 0] = hc_bounded_word_be (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_be (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_be (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_be (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_be (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_be (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_be (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_be (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_be (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_be (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_be (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_be (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_be (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_be (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_be (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_be (w, pos4 + 15, tail -  60);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
+  w2[0] = t[ 8];
+  w2[1] = t[ 9];
+  w2[2] = t[10];
+  w2[3] = t[11];
+  w3[0] = t[12];
+  w3[1] = t[13];
+  w3[2] = t[14];
+  w3[3] = t[15];
 
   sha1_update_vector_64 (ctx, w0, w1, w2, w3, len - pos1);
 }
@@ -2531,39 +3040,43 @@ DECLSPEC void sha1_update_vector_swap (PRIVATE_AS sha1_ctx_vector_t *ctx, PRIVAT
     sha1_update_vector_64 (ctx, w0, w1, w2, w3, 64);
   }
 
-  w0[0] = w[pos4 +  0];
-  w0[1] = w[pos4 +  1];
-  w0[2] = w[pos4 +  2];
-  w0[3] = w[pos4 +  3];
-  w1[0] = w[pos4 +  4];
-  w1[1] = w[pos4 +  5];
-  w1[2] = w[pos4 +  6];
-  w1[3] = w[pos4 +  7];
-  w2[0] = w[pos4 +  8];
-  w2[1] = w[pos4 +  9];
-  w2[2] = w[pos4 + 10];
-  w2[3] = w[pos4 + 11];
-  w3[0] = w[pos4 + 12];
-  w3[1] = w[pos4 + 13];
-  w3[2] = w[pos4 + 14];
-  w3[3] = w[pos4 + 15];
+  const int tail = len - pos1;
 
-  w0[0] = hc_swap32 (w0[0]);
-  w0[1] = hc_swap32 (w0[1]);
-  w0[2] = hc_swap32 (w0[2]);
-  w0[3] = hc_swap32 (w0[3]);
-  w1[0] = hc_swap32 (w1[0]);
-  w1[1] = hc_swap32 (w1[1]);
-  w1[2] = hc_swap32 (w1[2]);
-  w1[3] = hc_swap32 (w1[3]);
-  w2[0] = hc_swap32 (w2[0]);
-  w2[1] = hc_swap32 (w2[1]);
-  w2[2] = hc_swap32 (w2[2]);
-  w2[3] = hc_swap32 (w2[3]);
-  w3[0] = hc_swap32 (w3[0]);
-  w3[1] = hc_swap32 (w3[1]);
-  w3[2] = hc_swap32 (w3[2]);
-  w3[3] = hc_swap32 (w3[3]);
+  u32x t[16];
+
+  t[ 0] = hc_bounded_word_le (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_le (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_le (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_le (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_le (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_le (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_le (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_le (w, pos4 +  7, tail -  28);
+  t[ 8] = hc_bounded_word_le (w, pos4 +  8, tail -  32);
+  t[ 9] = hc_bounded_word_le (w, pos4 +  9, tail -  36);
+  t[10] = hc_bounded_word_le (w, pos4 + 10, tail -  40);
+  t[11] = hc_bounded_word_le (w, pos4 + 11, tail -  44);
+  t[12] = hc_bounded_word_le (w, pos4 + 12, tail -  48);
+  t[13] = hc_bounded_word_le (w, pos4 + 13, tail -  52);
+  t[14] = hc_bounded_word_le (w, pos4 + 14, tail -  56);
+  t[15] = hc_bounded_word_le (w, pos4 + 15, tail -  60);
+
+  w0[0] = hc_swap32 (t[ 0]);
+  w0[1] = hc_swap32 (t[ 1]);
+  w0[2] = hc_swap32 (t[ 2]);
+  w0[3] = hc_swap32 (t[ 3]);
+  w1[0] = hc_swap32 (t[ 4]);
+  w1[1] = hc_swap32 (t[ 5]);
+  w1[2] = hc_swap32 (t[ 6]);
+  w1[3] = hc_swap32 (t[ 7]);
+  w2[0] = hc_swap32 (t[ 8]);
+  w2[1] = hc_swap32 (t[ 9]);
+  w2[2] = hc_swap32 (t[10]);
+  w2[3] = hc_swap32 (t[11]);
+  w3[0] = hc_swap32 (t[12]);
+  w3[1] = hc_swap32 (t[13]);
+  w3[2] = hc_swap32 (t[14]);
+  w3[3] = hc_swap32 (t[15]);
 
   sha1_update_vector_64 (ctx, w0, w1, w2, w3, len - pos1);
 }
@@ -2595,14 +3108,27 @@ DECLSPEC void sha1_update_vector_utf16le (PRIVATE_AS sha1_ctx_vector_t *ctx, PRI
     sha1_update_vector_64 (ctx, w0, w1, w2, w3, 32 * 2);
   }
 
-  w0[0] = w[pos4 + 0];
-  w0[1] = w[pos4 + 1];
-  w0[2] = w[pos4 + 2];
-  w0[3] = w[pos4 + 3];
-  w1[0] = w[pos4 + 4];
-  w1[1] = w[pos4 + 5];
-  w1[2] = w[pos4 + 6];
-  w1[3] = w[pos4 + 7];
+  const int tail = len - pos1;
+
+  u32x t[8];
+
+  t[ 0] = hc_bounded_word_be (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_be (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_be (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_be (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_be (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_be (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_be (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_be (w, pos4 +  7, tail -  28);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
 
   make_utf16le (w1, w2, w3);
   make_utf16le (w0, w0, w1);
@@ -2654,14 +3180,27 @@ DECLSPEC void sha1_update_vector_utf16le_swap (PRIVATE_AS sha1_ctx_vector_t *ctx
     sha1_update_vector_64 (ctx, w0, w1, w2, w3, 32 * 2);
   }
 
-  w0[0] = w[pos4 + 0];
-  w0[1] = w[pos4 + 1];
-  w0[2] = w[pos4 + 2];
-  w0[3] = w[pos4 + 3];
-  w1[0] = w[pos4 + 4];
-  w1[1] = w[pos4 + 5];
-  w1[2] = w[pos4 + 6];
-  w1[3] = w[pos4 + 7];
+  const int tail = len - pos1;
+
+  u32x t[8];
+
+  t[ 0] = hc_bounded_word_le (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_le (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_le (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_le (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_le (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_le (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_le (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_le (w, pos4 +  7, tail -  28);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
 
   make_utf16le (w1, w2, w3);
   make_utf16le (w0, w0, w1);
@@ -2713,14 +3252,27 @@ DECLSPEC void sha1_update_vector_utf16leN (PRIVATE_AS sha1_ctx_vector_t *ctx, PR
     sha1_update_vector_64 (ctx, w0, w1, w2, w3, 32 * 2);
   }
 
-  w0[0] = w[pos4 + 0];
-  w0[1] = w[pos4 + 1];
-  w0[2] = w[pos4 + 2];
-  w0[3] = w[pos4 + 3];
-  w1[0] = w[pos4 + 4];
-  w1[1] = w[pos4 + 5];
-  w1[2] = w[pos4 + 6];
-  w1[3] = w[pos4 + 7];
+  const int tail = len - pos1;
+
+  u32x t[8];
+
+  t[ 0] = hc_bounded_word_be (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_be (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_be (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_be (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_be (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_be (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_be (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_be (w, pos4 +  7, tail -  28);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
 
   make_utf16leN (w1, w2, w3);
   make_utf16leN (w0, w0, w1);
@@ -2755,14 +3307,27 @@ DECLSPEC void sha1_update_vector_utf16beN (PRIVATE_AS sha1_ctx_vector_t *ctx, PR
     sha1_update_vector_64 (ctx, w0, w1, w2, w3, 32 * 2);
   }
 
-  w0[0] = w[pos4 + 0];
-  w0[1] = w[pos4 + 1];
-  w0[2] = w[pos4 + 2];
-  w0[3] = w[pos4 + 3];
-  w1[0] = w[pos4 + 4];
-  w1[1] = w[pos4 + 5];
-  w1[2] = w[pos4 + 6];
-  w1[3] = w[pos4 + 7];
+  const int tail = len - pos1;
+
+  u32x t[8];
+
+  t[ 0] = hc_bounded_word_be (w, pos4 +  0, tail -   0);
+  t[ 1] = hc_bounded_word_be (w, pos4 +  1, tail -   4);
+  t[ 2] = hc_bounded_word_be (w, pos4 +  2, tail -   8);
+  t[ 3] = hc_bounded_word_be (w, pos4 +  3, tail -  12);
+  t[ 4] = hc_bounded_word_be (w, pos4 +  4, tail -  16);
+  t[ 5] = hc_bounded_word_be (w, pos4 +  5, tail -  20);
+  t[ 6] = hc_bounded_word_be (w, pos4 +  6, tail -  24);
+  t[ 7] = hc_bounded_word_be (w, pos4 +  7, tail -  28);
+
+  w0[0] = t[ 0];
+  w0[1] = t[ 1];
+  w0[2] = t[ 2];
+  w0[3] = t[ 3];
+  w1[0] = t[ 4];
+  w1[1] = t[ 5];
+  w1[2] = t[ 6];
+  w1[3] = t[ 7];
 
   make_utf16beN (w1, w2, w3);
   make_utf16beN (w0, w0, w1);
@@ -2901,22 +3466,43 @@ DECLSPEC void sha1_hmac_init_vector (PRIVATE_AS sha1_hmac_ctx_vector_t *ctx, PRI
   }
   else
   {
-    w0[0] = w[ 0];
-    w0[1] = w[ 1];
-    w0[2] = w[ 2];
-    w0[3] = w[ 3];
-    w1[0] = w[ 4];
-    w1[1] = w[ 5];
-    w1[2] = w[ 6];
-    w1[3] = w[ 7];
-    w2[0] = w[ 8];
-    w2[1] = w[ 9];
-    w2[2] = w[10];
-    w2[3] = w[11];
-    w3[0] = w[12];
-    w3[1] = w[13];
-    w3[2] = w[14];
-    w3[3] = w[15];
+    const int tail = len;
+
+    u32x t[16];
+
+    t[ 0] = hc_bounded_word_be (w,  0, tail -   0);
+    t[ 1] = hc_bounded_word_be (w,  1, tail -   4);
+    t[ 2] = hc_bounded_word_be (w,  2, tail -   8);
+    t[ 3] = hc_bounded_word_be (w,  3, tail -  12);
+    t[ 4] = hc_bounded_word_be (w,  4, tail -  16);
+    t[ 5] = hc_bounded_word_be (w,  5, tail -  20);
+    t[ 6] = hc_bounded_word_be (w,  6, tail -  24);
+    t[ 7] = hc_bounded_word_be (w,  7, tail -  28);
+    t[ 8] = hc_bounded_word_be (w,  8, tail -  32);
+    t[ 9] = hc_bounded_word_be (w,  9, tail -  36);
+    t[10] = hc_bounded_word_be (w, 10, tail -  40);
+    t[11] = hc_bounded_word_be (w, 11, tail -  44);
+    t[12] = hc_bounded_word_be (w, 12, tail -  48);
+    t[13] = hc_bounded_word_be (w, 13, tail -  52);
+    t[14] = hc_bounded_word_be (w, 14, tail -  56);
+    t[15] = hc_bounded_word_be (w, 15, tail -  60);
+
+    w0[0] = t[ 0];
+    w0[1] = t[ 1];
+    w0[2] = t[ 2];
+    w0[3] = t[ 3];
+    w1[0] = t[ 4];
+    w1[1] = t[ 5];
+    w1[2] = t[ 6];
+    w1[3] = t[ 7];
+    w2[0] = t[ 8];
+    w2[1] = t[ 9];
+    w2[2] = t[10];
+    w2[3] = t[11];
+    w3[0] = t[12];
+    w3[1] = t[13];
+    w3[2] = t[14];
+    w3[3] = t[15];
   }
 
   sha1_hmac_init_vector_64 (ctx, w0, w1, w2, w3);

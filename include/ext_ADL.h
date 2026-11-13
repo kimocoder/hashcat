@@ -16,6 +16,16 @@
 // Declarations from:
 // https://github.com/GPUOpen-LibrariesAndSDKs/display-library/blob/209538e1dc7273f7459411a3a5044ffe2437ed95/include/adl_defines.h
 // https://github.com/GPUOpen-LibrariesAndSDKs/display-library/blob/209538e1dc7273f7459411a3a5044ffe2437ed95/include/adl_structures.h
+//
+// That pin is from January 2021 and upstream has shipped SDK 16.0, 17.0, 17.1 and 18.0 since, so it
+// looks stale. It is not, for what is used here. Every one of the 18 structures below was compared
+// field by field against upstream master and all 18 are unchanged, ADL_PMLOG_MAX_SENSORS is still
+// 256, and every sensor named in ADLSensorType still has the index it had. AMD appended 32 sensor
+// types after the ones here rather than renumbering, which moved only the terminator, and nothing
+// reads that.
+//
+// Worth repeating before taking a newer pin rather than assuming either way, because a structure
+// that grew would be written past the end of the copy declared here and no compiler would see it.
 
 
 /// Defines ADL_TRUE
@@ -26,51 +36,59 @@
 //Define Performance Metrics Log max sensors number
 #define ADL_PMLOG_MAX_SENSORS  256
 
+#if defined (__MSC_VER)
+#define HC_ADL_API_CALL __cdecl
+#elif defined (_WIN32) || defined (__WIN32__)
+#define HC_ADL_API_CALL __stdcall
+#else
+#define HC_ADL_API_CALL
+#endif
+
 typedef enum ADLSensorType
 {
-	SENSOR_MAXTYPES = 0,
-	PMLOG_CLK_GFXCLK = 1,
-	PMLOG_CLK_MEMCLK = 2,
-	PMLOG_CLK_SOCCLK = 3,
-	PMLOG_CLK_UVDCLK1 = 4,
-	PMLOG_CLK_UVDCLK2 = 5,
-	PMLOG_CLK_VCECLK = 6,
-	PMLOG_CLK_VCNCLK = 7,
-	PMLOG_TEMPERATURE_EDGE = 8,
-	PMLOG_TEMPERATURE_MEM = 9,
-	PMLOG_TEMPERATURE_VRVDDC = 10,
-	PMLOG_TEMPERATURE_VRMVDD = 11,
-	PMLOG_TEMPERATURE_LIQUID = 12,
-	PMLOG_TEMPERATURE_PLX = 13,
-	PMLOG_FAN_RPM = 14,
-	PMLOG_FAN_PERCENTAGE = 15,
-	PMLOG_SOC_VOLTAGE = 16,
-	PMLOG_SOC_POWER = 17,
-	PMLOG_SOC_CURRENT = 18,
-	PMLOG_INFO_ACTIVITY_GFX = 19,
-	PMLOG_INFO_ACTIVITY_MEM = 20,
-	PMLOG_GFX_VOLTAGE = 21,
-	PMLOG_MEM_VOLTAGE = 22,
-	PMLOG_ASIC_POWER = 23,
-	PMLOG_TEMPERATURE_VRSOC = 24,
-	PMLOG_TEMPERATURE_VRMVDD0 = 25,
-	PMLOG_TEMPERATURE_VRMVDD1 = 26,
-	PMLOG_TEMPERATURE_HOTSPOT = 27,
-        PMLOG_TEMPERATURE_GFX = 28,
-        PMLOG_TEMPERATURE_SOC = 29,
-        PMLOG_GFX_POWER = 30,
-        PMLOG_GFX_CURRENT = 31,
-        PMLOG_TEMPERATURE_CPU = 32,
-        PMLOG_CPU_POWER = 33,
-        PMLOG_CLK_CPUCLK = 34,
-        PMLOG_THROTTLER_STATUS = 35,
-        PMLOG_CLK_VCN1CLK1 = 36,
-        PMLOG_CLK_VCN1CLK2 = 37,
-        PMLOG_SMART_POWERSHIFT_CPU = 38,
-        PMLOG_SMART_POWERSHIFT_DGPU = 39,
-        PMLOG_BUS_SPEED = 40,
-        PMLOG_BUS_LANES = 41,
-	PMLOG_MAX_SENSORS_REAL
+  SENSOR_MAXTYPES = 0,
+  PMLOG_CLK_GFXCLK = 1,
+  PMLOG_CLK_MEMCLK = 2,
+  PMLOG_CLK_SOCCLK = 3,
+  PMLOG_CLK_UVDCLK1 = 4,
+  PMLOG_CLK_UVDCLK2 = 5,
+  PMLOG_CLK_VCECLK = 6,
+  PMLOG_CLK_VCNCLK = 7,
+  PMLOG_TEMPERATURE_EDGE = 8,
+  PMLOG_TEMPERATURE_MEM = 9,
+  PMLOG_TEMPERATURE_VRVDDC = 10,
+  PMLOG_TEMPERATURE_VRMVDD = 11,
+  PMLOG_TEMPERATURE_LIQUID = 12,
+  PMLOG_TEMPERATURE_PLX = 13,
+  PMLOG_FAN_RPM = 14,
+  PMLOG_FAN_PERCENTAGE = 15,
+  PMLOG_SOC_VOLTAGE = 16,
+  PMLOG_SOC_POWER = 17,
+  PMLOG_SOC_CURRENT = 18,
+  PMLOG_INFO_ACTIVITY_GFX = 19,
+  PMLOG_INFO_ACTIVITY_MEM = 20,
+  PMLOG_GFX_VOLTAGE = 21,
+  PMLOG_MEM_VOLTAGE = 22,
+  PMLOG_ASIC_POWER = 23,
+  PMLOG_TEMPERATURE_VRSOC = 24,
+  PMLOG_TEMPERATURE_VRMVDD0 = 25,
+  PMLOG_TEMPERATURE_VRMVDD1 = 26,
+  PMLOG_TEMPERATURE_HOTSPOT = 27,
+  PMLOG_TEMPERATURE_GFX = 28,
+  PMLOG_TEMPERATURE_SOC = 29,
+  PMLOG_GFX_POWER = 30,
+  PMLOG_GFX_CURRENT = 31,
+  PMLOG_TEMPERATURE_CPU = 32,
+  PMLOG_CPU_POWER = 33,
+  PMLOG_CLK_CPUCLK = 34,
+  PMLOG_THROTTLER_STATUS = 35,
+  PMLOG_CLK_VCN1CLK1 = 36,
+  PMLOG_CLK_VCN1CLK2 = 37,
+  PMLOG_SMART_POWERSHIFT_CPU = 38,
+  PMLOG_SMART_POWERSHIFT_DGPU = 39,
+  PMLOG_BUS_SPEED = 40,
+  PMLOG_BUS_LANES = 41,
+  PMLOG_MAX_SENSORS_REAL
 } ADLSensorType;
 
 /// Defines the maximum string length
@@ -642,7 +660,7 @@ typedef struct hm_adl_lib
 
 typedef hm_adl_lib_t ADL_PTR;
 
-void *HC_API_CALL ADL_Main_Memory_Alloc (const int iSize);
+void *HC_ADL_API_CALL ADL_Main_Memory_Alloc (const int iSize);
 
 int adl_init (void *hashcat_ctx);
 void adl_close (void *hashcat_ctx);

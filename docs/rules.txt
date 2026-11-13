@@ -1,61 +1,108 @@
-#define RULE_OP_MANGLE_NOOP             ':' // does nothing
-#define RULE_OP_MANGLE_LREST            'l' // lower case all chars
-#define RULE_OP_MANGLE_UREST            'u' // upper case all chars
-#define RULE_OP_MANGLE_LREST_UFIRST     'c' // lower case all chars, upper case 1st
-#define RULE_OP_MANGLE_UREST_LFIRST     'C' // upper case all chars, lower case 1st
-#define RULE_OP_MANGLE_TREST            't' // switch the case of each char
-#define RULE_OP_MANGLE_TOGGLE_AT        'T' // switch the case of each char on pos N
-#define RULE_OP_MANGLE_TOGGLE_AT_SEP    '3' // switch the case of the first letter after occurrence N of char X
-#define RULE_OP_MANGLE_REVERSE          'r' // reverse word
-#define RULE_OP_MANGLE_DUPEWORD         'd' // append word to itself
-#define RULE_OP_MANGLE_DUPEWORD_TIMES   'p' // append word to itself N times
-#define RULE_OP_MANGLE_REFLECT          'f' // reflect word (append reversed word)
-#define RULE_OP_MANGLE_ROTATE_LEFT      '{' // rotate the word left.  ex: hello -> elloh
-#define RULE_OP_MANGLE_ROTATE_RIGHT     '}' // rotate the word right. ex: hello -> ohell
-#define RULE_OP_MANGLE_APPEND           '$' // append char X
-#define RULE_OP_MANGLE_PREPEND          '^' // prepend char X
-#define RULE_OP_MANGLE_DELETE_FIRST     '[' // delete first char of word
-#define RULE_OP_MANGLE_DELETE_LAST      ']' // delete last char of word
-#define RULE_OP_MANGLE_DELETE_AT        'D' // delete char of word at pos N
-#define RULE_OP_MANGLE_EXTRACT          'x' // extract X chars of word at pos N
-#define RULE_OP_MANGLE_OMIT             'O' // omit X chars of word at pos N
-#define RULE_OP_MANGLE_INSERT           'i' // insert char X at pos N
-#define RULE_OP_MANGLE_OVERSTRIKE       'o' // overwrite with char X at pos N
-#define RULE_OP_MANGLE_TRUNCATE_AT      '\''// cut the word at pos N
-#define RULE_OP_MANGLE_REPLACE          's' // replace all chars X with char Y
-#define RULE_OP_MANGLE_PURGECHAR        '@' // purge all instances of char X
-#define RULE_OP_MANGLE_DUPECHAR_FIRST   'z' // prepend first char of word to itself N times. ex: hello -> hhhello
-#define RULE_OP_MANGLE_DUPECHAR_LAST    'Z' // append last char of word to itself N times.   ex: hello -> hellooo
-#define RULE_OP_MANGLE_DUPECHAR_ALL     'q' // duplicate all chars. ex: hello -> hheelllloo
-#define RULE_OP_MANGLE_SWITCH_FIRST     'k' // switches the first 2 chars. ex: hello -> ehllo
-#define RULE_OP_MANGLE_SWITCH_LAST      'K' // switches the last 2 chars.  ex: hello -> helol
-#define RULE_OP_MANGLE_SWITCH_AT        '*' // switches char at pos N with char at pos M. ex: hello -> holle
-#define RULE_OP_MANGLE_CHR_SHIFTL       'L' // bitwise shift left char at pos N.  ex: hello0 -> hello`
-#define RULE_OP_MANGLE_CHR_SHIFTR       'R' // bitwise shift right char at pos N. ex: hello` -> hello0
-#define RULE_OP_MANGLE_CHR_INCR         '+' // bytewise increase at pos N. ex: hello0 -> hello1
-#define RULE_OP_MANGLE_CHR_DECR         '-' // bytewise decreate at pos N. ex: hello1 -> hello0
-#define RULE_OP_MANGLE_REPLACE_NP1      '.' // replaces char @ n with value at @ n plus 1
-#define RULE_OP_MANGLE_REPLACE_NM1      ',' // replaces char @ n with value at @ n minus 1
-#define RULE_OP_MANGLE_DUPEBLOCK_FIRST  'y' // duplicates first N chars
-#define RULE_OP_MANGLE_DUPEBLOCK_LAST   'Y' // duplicates last N chars
-#define RULE_OP_MANGLE_TITLE            'E' // lowercase everything then upper case the first letter and every letter after a space
-#define RULE_OP_MANGLE_TITLE_SEP        'e' // lowercase everything then upper case the first letter and every letter after char X
+#define RULE_OP_MANGLE_NOOP              ':'  // no operation
+#define RULE_OP_MANGLE_LREST             'l'  // lower case all chars
+#define RULE_OP_MANGLE_UREST             'u'  // upper case all chars
+#define RULE_OP_MANGLE_LREST_UFIRST      'c'  // lower case all chars, upper case 1st
+#define RULE_OP_MANGLE_UREST_LFIRST      'C'  // upper case all chars, lower case 1st
+#define RULE_OP_MANGLE_TREST             't'  // switch the case of each char
+#define RULE_OP_MANGLE_SHIFT_CASE        'S'  // shift the case of each char, JtR-like
+#define RULE_OP_MANGLE_TOGGLE_AT         'T'  // switch the case of each char on pos N
+#define RULE_OP_MANGLE_TOGGLE_AT_SEP     '3'  // switch the case of the first letter after occurrence N of char X
+#define RULE_OP_MANGLE_REVERSE           'r'  // reverse word
+#define RULE_OP_MANGLE_DUPEWORD          'd'  // append word to itself
+#define RULE_OP_MANGLE_DUPEWORD_TIMES    'p'  // append word to itself N times
+#define RULE_OP_MANGLE_REFLECT           'f'  // reflect word (append reversed word)
+#define RULE_OP_MANGLE_ROTATE_LEFT       '{'  // rotate the word left.  ex: hello -> elloh
+#define RULE_OP_MANGLE_ROTATE_RIGHT      '}'  // rotate the word right. ex: hello -> ohell
+#define RULE_OP_MANGLE_APPEND            '$'  // append char X
+#define RULE_OP_MANGLE_PREPEND           '^'  // prepend char X
+#define RULE_OP_MANGLE_DELETE_FIRST      '['  // delete first char of word
+#define RULE_OP_MANGLE_DELETE_LAST       ']'  // delete last char of word
+#define RULE_OP_MANGLE_DELETE_AT         'D'  // delete char of word at pos N
+#define RULE_OP_MANGLE_EXTRACT           'x'  // extract X chars of word at pos N
+#define RULE_OP_MANGLE_OMIT              'O'  // omit X chars of word at pos N
+#define RULE_OP_MANGLE_INSERT            'i'  // insert char X at pos N
+#define RULE_OP_MANGLE_INSERT_EVERY      'v'  // insert char X every N chars
+#define RULE_OP_MANGLE_OVERSTRIKE        'o'  // overwrite with char X at pos N
+#define RULE_OP_MANGLE_TRUNCATE_AT       '\'' // cut the word at pos N
+#define RULE_OP_MANGLE_REPLACE           's'  // replace all chars X with char Y
+#define RULE_OP_MANGLE_REPLACE_NTH       'N'  // replace the Nth occurrence (0-based) of char X with char Y. ex: N1eo on seeds -> seods
+#define RULE_OP_MANGLE_PURGECHAR         '@'  // purge all instances of char X
+#define RULE_OP_MANGLE_DUPECHAR_FIRST    'z'  // prepend first char of word to itself N times. ex: hello -> hhhello
+#define RULE_OP_MANGLE_DUPECHAR_LAST     'Z'  // append last char of word to itself N times.   ex: hello -> hellooo
+#define RULE_OP_MANGLE_DUPECHAR_ALL      'q'  // duplicate all chars. ex: hello -> hheelllloo
+#define RULE_OP_MANGLE_SWITCH_FIRST      'k'  // switches the first 2 chars. ex: hello -> ehllo
+#define RULE_OP_MANGLE_SWITCH_LAST       'K'  // switches the last 2 chars.  ex: hello -> helol
+#define RULE_OP_MANGLE_SWITCH_AT         '*'  // switches char at pos N with char at pos M. ex: hello -> holle
+#define RULE_OP_MANGLE_CHR_SHIFTL        'L'  // bitwise shift left char at pos N.  ex: hello0 -> hello`
+#define RULE_OP_MANGLE_CHR_SHIFTR        'R'  // bitwise shift right char at pos N. ex: hello` -> hello0
+#define RULE_OP_MANGLE_CHR_INCR          '+'  // bytewise increase at pos N. ex: hello0 -> hello1
+#define RULE_OP_MANGLE_CHR_DECR          '-'  // bytewise decrease at pos N. ex: hello1 -> hello0
+#define RULE_OP_MANGLE_CHR_ADD           'B'  // add byte value of X at pos N, bytewise. ex: hello0 -> hello`
+#define RULE_OP_MANGLE_REPLACE_NP1       '.'  // replaces char @ n with value at @ n plus 1
+#define RULE_OP_MANGLE_REPLACE_NM1       ','  // replaces char @ n with value at @ n minus 1
+#define RULE_OP_MANGLE_DUPEBLOCK_FIRST   'y'  // duplicates first N chars
+#define RULE_OP_MANGLE_DUPEBLOCK_LAST    'Y'  // duplicates last N chars
+#define RULE_OP_MANGLE_TITLE             'E'  // lowercase everything then upper case the first letter and every letter after a space
+#define RULE_OP_MANGLE_TITLE_SEP         'e'  // upper case the first letter and the letter after each run of char X, lowercase all others but X
+#define RULE_OP_MANGLE_TO_HEX_LOWER      'h'  // convert the entire password to lowercase hex
+#define RULE_OP_MANGLE_TO_HEX_UPPER      'H'  // convert the entire password to uppercase hex
 
 /* With -j or -k only */
 
-#define RULE_OP_MANGLE_EXTRACT_MEMORY   'X' // insert substring delimited by N and M into current word at pos I
-#define RULE_OP_MANGLE_APPEND_MEMORY    '4' // insert the word saved by 'M' at the end of current word
-#define RULE_OP_MANGLE_PREPEND_MEMORY   '6' // insert the word saved by 'M' at the beginning of current word
-#define RULE_OP_MEMORIZE_WORD           'M' // memorize current word
+#define RULE_OP_MANGLE_EXTRACT_MEMORY    'X'  // insert substring delimited by N and M into current word at pos I
+#define RULE_OP_MANGLE_APPEND_MEMORY     '4'  // insert the word saved by 'M' at the end of current word
+#define RULE_OP_MANGLE_PREPEND_MEMORY    '6'  // insert the word saved by 'M' at the beginning of current word
+#define RULE_OP_MEMORIZE_WORD            'M'  // memorize current word
 
-#define RULE_OP_REJECT_LESS             '<' // reject plains of length greater than N
-#define RULE_OP_REJECT_GREATER          '>' // reject plains of length less than N
-#define RULE_OP_REJECT_EQUAL            '_' // reject plains of length not equal to N
-#define RULE_OP_REJECT_CONTAIN          '!' // reject plains that contain char X
-#define RULE_OP_REJECT_NOT_CONTAIN      '/' // reject plains that do not contain char X
-#define RULE_OP_REJECT_EQUAL_FIRST      '(' // reject plains that do not contain char X at first pos
-#define RULE_OP_REJECT_EQUAL_LAST       ')' // reject plains that do not contain char X at last pos
-#define RULE_OP_REJECT_EQUAL_AT         '=' // reject plains that do not contain char X at pos N
-#define RULE_OP_REJECT_CONTAINS         '%' // reject plains that contain char X less than N times
-#define RULE_OP_REJECT_MEMORY           'Q' // reject plains that match the plain saved (see M), i.e. if unchanged
-#define RULE_LAST_REJECTED_SAVED_POS    'p' // pos of the char last found with '/' or '%'
+#define RULE_OP_REJECT_LESS              '<'  // reject plains of length greater than N
+#define RULE_OP_REJECT_GREATER           '>'  // reject plains of length less than N
+#define RULE_OP_REJECT_EQUAL             '_'  // reject plains of length not equal to N
+#define RULE_OP_REJECT_CONTAIN           '!'  // reject plains that contain char X
+#define RULE_OP_REJECT_NOT_CONTAIN       '/'  // reject plains that do not contain char X
+#define RULE_OP_REJECT_EQUAL_FIRST       '('  // reject plains that do not contain char X at first pos
+#define RULE_OP_REJECT_EQUAL_LAST        ')'  // reject plains that do not contain char X at last pos
+#define RULE_OP_REJECT_EQUAL_AT          '='  // reject plains that do not contain char X at pos N
+#define RULE_OP_REJECT_CONTAINS          '%'  // reject plains that contain char X less than N times
+#define RULE_OP_REJECT_MEMORY            'Q'  // reject plains that match the plain saved (see M), i.e. if unchanged
+#define RULE_LAST_REJECTED_SAVED_POS     'p'  // pos of the char last found with '/' or '%'
+
+/* using character classes */
+
+#define RULE_OP_CLASS_BASED              '~'
+#define RULE_OP_MANGLE_REPLACE_CLASS     0x01 // replace all instances of chars in class C with char Y, ~s?CY
+#define RULE_OP_MANGLE_PURGECHAR_CLASS   0x02 // purge all instances of chars in class C, ~@?C
+#define RULE_OP_MANGLE_TITLE_SEP_CLASS   0x03 // upper case the first letter and the letter after each run of class C, lowercase all others but C, ~e?C
+
+/* using character classes, with -j or -k only */
+
+#define RULE_OP_REJECT_CONTAIN_CLASS     0x04 // reject plains that contain chars in class C, ~!?C
+#define RULE_OP_REJECT_NOT_CONTAIN_CLASS 0x05 // reject plains that do not contain chars in class C, ~/?C
+#define RULE_OP_REJECT_EQUAL_FIRST_CLASS 0x06 // reject plains that do not contain chars in class C at first pos, ~(?C
+#define RULE_OP_REJECT_EQUAL_LAST_CLASS  0x07 // reject plains that do not contain chars in class C at last pos, ~)?C
+#define RULE_OP_REJECT_EQUAL_AT_CLASS    0x08 // reject plains that do not contain chars in class C at pos N, ~=N?C
+#define RULE_OP_REJECT_CONTAINS_CLASS    0x09 // reject plains that contain chars in class C less than N times, ~%N?C
+
+/* writing a byte that is not typeable, including any character outside ASCII */
+
+Any rule operand that accepts a character also accepts `\xHH`, allowing a rule to emit a byte that cannot be typed directly. The two hexadecimal digits may be uppercase or lowercase.
+
+  $\x41          append 'A'
+  ^\x41          prepend 'A'
+  i2\x41         insert 'A' at position 2
+  o0\x41         overwrite position 0 with 'A'
+  s\x41\x42      replace every 'A' with 'B'
+
+A character outside ASCII occupies more than one byte in UTF-8. It can be written directly or as one `\xHH` operand per byte. The following rules are equivalent and both append U+2116:
+
+  $\xe2$\x84$\x96
+  $<the character>
+
+The five operations that emit bytes accept a directly written character: `$`, `^`, `i`, `v` and `o`. Such a character compiles to one operation per byte, exactly as the escaped form spells out explicitly. The rule engine remains byte-oriented, and both forms consume the same number of the 31 available operations. A three-byte character consumes three operations, and hashcat identifies and rejects any rule that would exceed the limit.
+
+A byte that is not part of a complete UTF-8 sequence retains its literal one-byte meaning, so rule files containing raw bytes are unaffected.
+
+Byte order depends on the operation. Append, insert and overwrite process bytes from left to right. Prepend reverses that order because `^` places each byte at position zero, ahead of the previously inserted byte. Prepending U+00E9, encoded as `c3 a9`, therefore requires:
+
+  ^\xa9^\xc3
+
+The rule engine remains byte-oriented throughout. Matching and counting operations such as `@`, `s`, `e` and the rejection rules test individual bytes and can split a multibyte character. Position arguments for operations such as `D`, `x` and `O` are byte offsets, while `<` and `>` compare byte lengths. A word containing six non-ASCII characters can therefore have a rule length of 12 bytes.

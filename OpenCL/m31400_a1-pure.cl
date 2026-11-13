@@ -31,7 +31,6 @@ DECLSPEC void shift_buffer_by_offset (PRIVATE_AS u32 *w0, const u32 offset)
 {
   const int offset_switch = offset / 4;
 
-  #if ((defined IS_AMD || defined IS_HIP) && HAS_VPERM == 0) || defined IS_GENERIC
   switch (offset_switch)
   {
     case 0:
@@ -69,56 +68,6 @@ DECLSPEC void shift_buffer_by_offset (PRIVATE_AS u32 *w0, const u32 offset)
       w0[0] = 0;
       break;
   }
-  #endif
-
-  #if ((defined IS_AMD || defined IS_HIP) && HAS_VPERM == 1) || defined IS_NV
-
-  #if defined IS_NV
-  const int selector = (0x76543210 >> ((offset & 3) * 4)) & 0xffff;
-  #endif
-
-  #if (defined IS_AMD || defined IS_HIP)
-  const int selector = l32_from_64_S(0x0706050403020100UL >> ((offset & 3) * 8));
-  #endif
-
-  switch (offset_switch)
-  {
-    case 0:
-      w0[3] = hc_byte_perm_S (w0[3], w0[2], selector);
-      w0[2] = hc_byte_perm_S (w0[2], w0[1], selector);
-      w0[1] = hc_byte_perm_S (w0[1], w0[0], selector);
-      w0[0] = hc_byte_perm_S (w0[0],     0, selector);
-      break;
-
-    case 1:
-      w0[3] = hc_byte_perm_S (w0[2], w0[1], selector);
-      w0[2] = hc_byte_perm_S (w0[1], w0[0], selector);
-      w0[1] = hc_byte_perm_S (w0[0],     0, selector);
-      w0[0] = 0;
-      break;
-
-    case 2:
-      w0[3] = hc_byte_perm_S (w0[1], w0[0], selector);
-      w0[2] = hc_byte_perm_S (w0[0],     0, selector);
-      w0[1] = 0;
-      w0[0] = 0;
-      break;
-
-    case 3:
-      w0[3] = hc_byte_perm_S (w0[0],     0, selector);
-      w0[2] = 0;
-      w0[1] = 0;
-      w0[0] = 0;
-      break;
-
-    default:
-      w0[3] = 0;
-      w0[2] = 0;
-      w0[1] = 0;
-      w0[0] = 0;
-      break;
-  }
-  #endif
 }
 
 DECLSPEC void aes256_scrt_format (PRIVATE_AS u32 *aes_ks, PRIVATE_AS u32 *pw, const u32 pw_len, PRIVATE_AS u32 *hash, PRIVATE_AS u32 *out, SHM_TYPE u32 *s_te0, SHM_TYPE u32 *s_te1, SHM_TYPE u32 *s_te2, SHM_TYPE u32 *s_te3, SHM_TYPE u32 *s_te4)
@@ -192,6 +141,12 @@ KERNEL_FQ KERNEL_FA void m31400_mxx (KERN_ATTR_ESALT (scrtv2_t))
 
   sha256_init (&ctx0);
 
+  // -a 12 may put a piece of mask in front of the base word, and the context below can then not
+  // be reused. This is the same context one update earlier, so whatever went in before the base
+  // word still goes in only once.
+
+  sha256_ctx_t ctx0_pre = ctx0;
+
   sha256_update_global_swap (&ctx0, pws[gid].i, pws[gid].pw_len);
 
   /**
@@ -200,9 +155,46 @@ KERNEL_FQ KERNEL_FA void m31400_mxx (KERN_ATTR_ESALT (scrtv2_t))
 
   for (u32 il_pos = 0; il_pos < IL_CNT; il_pos++)
   {
-    sha256_ctx_t ctx = ctx0;
+    sha256_ctx_t ctx;
 
-    sha256_update_global_swap (&ctx, combs_buf[il_pos].i, combs_buf[il_pos].pw_len);
+    // -a 1 may choose the larger wordlist as the base word source, which puts the amplifier word in
+    // front of the base word (BASE_RIGHT). The context that already absorbed the base word cannot be
+    // reused for that, so start from the pre-base context, feed the amplifier, then the base word.
+
+    if (COMBS_MODE == COMBINATOR_MODE_BASE_RIGHT)
+    {
+      ctx = ctx0_pre;
+
+      sha256_update_global_swap (&ctx, COMBS_POST (il_pos).i, COMBS_POST (il_pos).pw_len);
+      sha256_update_global_swap (&ctx, pws[gid].i, pws[gid].pw_len);
+    }
+    else
+    {
+      ctx = ctx0;
+
+      // -a 12 puts the base word inside the amplifier instead of beside it, so a candidate is five
+      // pieces: mask, base word, mask, second word, mask. Any of them may be empty, and the two in the
+      // middle are empty unless the mask carries a ?q.
+      //
+      // Every thread reads the same il_pos, so the branches below are uniform across the warp and the
+      // attack modes that do not take them pay nothing but the compare.
+
+      if (COMBS_IS_MIDDLE)
+      {
+        if (COMBS_PRE (il_pos).pw_len > 0)
+        {
+          ctx = ctx0_pre;
+
+          sha256_update_global_swap (&ctx, COMBS_PRE (il_pos).i, COMBS_PRE (il_pos).pw_len);
+          sha256_update_global_swap (&ctx, pws[gid].i, pws[gid].pw_len);
+        }
+
+        if (COMBS_MID  (il_pos).pw_len > 0) sha256_update_global_swap (&ctx, COMBS_MID  (il_pos).i, COMBS_MID  (il_pos).pw_len);
+        if (COMBS_WORD (il_pos).pw_len > 0) sha256_update_global_swap (&ctx, COMBS_WORD (il_pos).i, COMBS_WORD (il_pos).pw_len);
+      }
+
+      sha256_update_global_swap (&ctx, COMBS_POST (il_pos).i, COMBS_POST (il_pos).pw_len);
+    }
 
     wt[0] = hc_swap32_S (ctx.w0[0]);
     wt[1] = hc_swap32_S (ctx.w0[1]);
@@ -294,6 +286,12 @@ KERNEL_FQ KERNEL_FA void m31400_sxx (KERN_ATTR_ESALT (scrtv2_t))
 
   sha256_init (&ctx0);
 
+  // -a 12 may put a piece of mask in front of the base word, and the context below can then not
+  // be reused. This is the same context one update earlier, so whatever went in before the base
+  // word still goes in only once.
+
+  sha256_ctx_t ctx0_pre = ctx0;
+
   sha256_update_global_swap (&ctx0, pws[gid].i, pws[gid].pw_len);
 
   /**
@@ -302,9 +300,46 @@ KERNEL_FQ KERNEL_FA void m31400_sxx (KERN_ATTR_ESALT (scrtv2_t))
 
   for (u32 il_pos = 0; il_pos < IL_CNT; il_pos++)
   {
-    sha256_ctx_t ctx = ctx0;
+    sha256_ctx_t ctx;
 
-    sha256_update_global_swap (&ctx, combs_buf[il_pos].i, combs_buf[il_pos].pw_len);
+    // -a 1 may choose the larger wordlist as the base word source, which puts the amplifier word in
+    // front of the base word (BASE_RIGHT). The context that already absorbed the base word cannot be
+    // reused for that, so start from the pre-base context, feed the amplifier, then the base word.
+
+    if (COMBS_MODE == COMBINATOR_MODE_BASE_RIGHT)
+    {
+      ctx = ctx0_pre;
+
+      sha256_update_global_swap (&ctx, COMBS_POST (il_pos).i, COMBS_POST (il_pos).pw_len);
+      sha256_update_global_swap (&ctx, pws[gid].i, pws[gid].pw_len);
+    }
+    else
+    {
+      ctx = ctx0;
+
+      // -a 12 puts the base word inside the amplifier instead of beside it, so a candidate is five
+      // pieces: mask, base word, mask, second word, mask. Any of them may be empty, and the two in the
+      // middle are empty unless the mask carries a ?q.
+      //
+      // Every thread reads the same il_pos, so the branches below are uniform across the warp and the
+      // attack modes that do not take them pay nothing but the compare.
+
+      if (COMBS_IS_MIDDLE)
+      {
+        if (COMBS_PRE (il_pos).pw_len > 0)
+        {
+          ctx = ctx0_pre;
+
+          sha256_update_global_swap (&ctx, COMBS_PRE (il_pos).i, COMBS_PRE (il_pos).pw_len);
+          sha256_update_global_swap (&ctx, pws[gid].i, pws[gid].pw_len);
+        }
+
+        if (COMBS_MID  (il_pos).pw_len > 0) sha256_update_global_swap (&ctx, COMBS_MID  (il_pos).i, COMBS_MID  (il_pos).pw_len);
+        if (COMBS_WORD (il_pos).pw_len > 0) sha256_update_global_swap (&ctx, COMBS_WORD (il_pos).i, COMBS_WORD (il_pos).pw_len);
+      }
+
+      sha256_update_global_swap (&ctx, COMBS_POST (il_pos).i, COMBS_POST (il_pos).pw_len);
+    }
 
     wt[0] = hc_swap32_S (ctx.w0[0]);
     wt[1] = hc_swap32_S (ctx.w0[1]);
