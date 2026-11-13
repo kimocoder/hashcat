@@ -106,6 +106,20 @@ void pot_tree_destroy (pot_tree_entry_t *tree)
   }
 }
 
+static void potfile_init_free (hash_t *hash_buf, pot_tree_entry_t *all_hashes_tree, pot_tree_entry_t *tree_entry_cache, pot_hash_node_t *tree_nodes_cache, pot_tree_entry_t **tree_entries)
+{
+  if (all_hashes_tree != NULL) pot_tree_destroy (all_hashes_tree);
+
+  hcfree (hash_buf->digest);
+  hcfree (hash_buf->salt);
+  hcfree (hash_buf->esalt);
+  hcfree (hash_buf->hook_salt);
+
+  hcfree (tree_entry_cache);
+  hcfree (tree_nodes_cache);
+  hcfree (tree_entries);
+}
+
 int potfile_init (hashcat_ctx_t *hashcat_ctx)
 {
   const folder_config_t *folder_config = hashcat_ctx->folder_config;
@@ -676,6 +690,8 @@ int potfile_remove_parse (hashcat_ctx_t *hashcat_ctx)
       {
         fprintf (stderr, "Error while allocating memory for the potfile search: %s\n", MSG_ENOMEM);
 
+        potfile_init_free (&hash_buf, all_hashes_tree, tree_entry_cache, tree_nodes_cache, tree_entries);
+
         return -1;
       }
 
@@ -702,7 +718,12 @@ int potfile_remove_parse (hashcat_ctx_t *hashcat_ctx)
 
   const int rc = potfile_read_open (hashcat_ctx);
 
-  if (rc == -1) return -1;
+  if (rc == -1)
+  {
+    potfile_init_free (&hash_buf, all_hashes_tree, tree_entry_cache, tree_nodes_cache, tree_entries);
+
+    return -1;
+  }
 
   void *tmps = NULL;
 
