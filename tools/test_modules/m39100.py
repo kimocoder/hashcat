@@ -26,6 +26,23 @@ CLEARTEXT_TICKET = (
     "323134343735305a"
 )
 
+# The same ticket with a longer realm. At 281 bytes its EncTicketPart length is on two bytes behind
+# 0x82, where the one above has it on one behind 0x81.
+
+CLEARTEXT_TICKET_LONG = (
+    "6382011530820111a00703050050a00000a11b3019a003020117"
+    "a112041058e0d77776e8b8e03991f2966939222aa27b1b794d59"
+    "4b5242544553542e434f4e544f534f2e434f4d41414141414141"
+    "4141414141414141414141414141414141414141414141414141"
+    "4141414141414141414141414141414141414141414141414141"
+    "4141414141414141414141414141414141414141414141414141"
+    "414141414141414141414141414141a3133011a003020102a10a"
+    "30081b067472616e6365a40b3009a003020101a1020400a51118"
+    "0f32303136303231353134343735305aa611180f323031363032"
+    "31353134343735305aa711180f32303136303231363030343735"
+    "305aa811180f32303136303232323134343735305a"
+)
+
 
 def _encrypt(key, data):
     return DES.new(key, DES.MODE_CBC, key).encrypt(data)
@@ -94,7 +111,7 @@ def module_generate_hash(
     key = string_to_key(word, (realm.upper() + user).encode())
 
     if edata2 is None:
-        cipher = _wrap(key, bytes.fromhex(CLEARTEXT_TICKET))
+        cipher = _wrap(key, bytes.fromhex(random.choice((CLEARTEXT_TICKET, CLEARTEXT_TICKET_LONG))))
     else:
         cipher = bytes.fromhex(checksum + edata2)
 
