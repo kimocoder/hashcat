@@ -695,9 +695,18 @@ static int module_hash_encode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYB
     *ptr_data = '*';
     ptr_data++;
 
-    snprintf (ptr_data, 3, "%u", keyfile_len * 2);
+    // The field is fixed at two digits, and keyfile_len is the 32-byte file hash, so its hex length is
+    // always 64.
 
-    ptr_data += 2;
+    const u32 keyfile_hex_len = keyfile_len * 2;
+
+    if ((keyfile_hex_len < 10) || (keyfile_hex_len > 99)) return 0;
+
+    *ptr_data = (char) ('0' + (keyfile_hex_len / 10));
+    ptr_data++;
+
+    *ptr_data = (char) ('0' + (keyfile_hex_len % 10));
+    ptr_data++;
 
     *ptr_data = '*';
     ptr_data++;
@@ -717,9 +726,21 @@ static int module_hash_encode (MAYBE_UNUSED const hashconfig_t *hashconfig, MAYB
     *ptr_data = '*';
     ptr_data++;
 
-    snprintf (ptr_data, 4, "%u", userkey_len * 2);
+    // The field is fixed at three digits, and userkey_len is the 64-byte user key, so its hex length
+    // is always 128.
 
-    ptr_data += 3;
+    const u32 userkey_hex_len = userkey_len * 2;
+
+    if ((userkey_hex_len < 100) || (userkey_hex_len > 999)) return 0;
+
+    *ptr_data = (char) ('0' + (userkey_hex_len / 100));
+    ptr_data++;
+
+    *ptr_data = (char) ('0' + ((userkey_hex_len / 10) % 10));
+    ptr_data++;
+
+    *ptr_data = (char) ('0' + (userkey_hex_len % 10));
+    ptr_data++;
 
     *ptr_data = '*';
     ptr_data++;
