@@ -233,6 +233,7 @@ static const char *const USAGE_BIG_POST_HASHMODES[] =
   "  4 | crack_pos",
   "  5 | timestamp absolute",
   "  6 | timestamp relative",
+  "  7 | hash mode",
   "",
   "- [ Debugging Modes ] -",
   "",

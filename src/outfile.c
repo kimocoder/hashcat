@@ -89,6 +89,7 @@ u32 outfile_format_parse (const char *format_string)
       case OUTFILE_FMT_CRACKPOS:
       case OUTFILE_FMT_TIME_ABS:
       case OUTFILE_FMT_TIME_REL:
+      case OUTFILE_FMT_HASHTYPE:
         accepted = true;
         break;
       // NOT acceptable formats:
@@ -920,10 +921,20 @@ int outfile_write (hashcat_ctx_t *hashcat_ctx, const char *out_buf, const int ou
       {
         tmp_len = hc_append_raw (tmp_buf, tmp_len, HCBUFSIZ_LARGE, (const u8 *) username, (int) user_len);
 
-        if (outfile_format & (OUTFILE_FMT_TIME_ABS | OUTFILE_FMT_TIME_REL | OUTFILE_FMT_HASH | OUTFILE_FMT_PLAIN | OUTFILE_FMT_HEXPLAIN | OUTFILE_FMT_CRACKPOS))
+        if (outfile_format & (OUTFILE_FMT_HASHTYPE | OUTFILE_FMT_TIME_ABS | OUTFILE_FMT_TIME_REL | OUTFILE_FMT_HASH | OUTFILE_FMT_PLAIN | OUTFILE_FMT_HEXPLAIN | OUTFILE_FMT_CRACKPOS))
         {
           tmp_len = hc_append_chr (tmp_buf, tmp_len, HCBUFSIZ_LARGE, hashconfig->separator);
         }
+      }
+    }
+
+    if (outfile_format & OUTFILE_FMT_HASHTYPE)
+    {
+      tmp_len = outfile_append_fmt (tmp_buf, tmp_len, "%u", hashconfig->hash_mode);
+
+      if (outfile_format & (OUTFILE_FMT_TIME_ABS | OUTFILE_FMT_TIME_REL | OUTFILE_FMT_HASH | OUTFILE_FMT_PLAIN | OUTFILE_FMT_HEXPLAIN | OUTFILE_FMT_CRACKPOS))
+      {
+        tmp_len = hc_append_chr (tmp_buf, tmp_len, HCBUFSIZ_LARGE, hashconfig->separator);
       }
     }
 

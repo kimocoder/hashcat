@@ -187,6 +187,7 @@ device. That is the one to use for a fast hash.
   4 | crack_pos
   5 | timestamp absolute
   6 | timestamp relative
+  7 | hash mode
 
 - [ Debugging Modes ] -
 
