@@ -513,10 +513,29 @@ char **scan_directory (const char *path)
 // the command line. So the two decisions needed then are made here the same way, without creating
 // anything. cache_path is what --cache-path names and profile_path what --profile-dir names, or NULL.
 
-int folder_early_dirs (const folder_request_t *folder_request, MAYBE_UNUSED const char *install_folder, MAYBE_UNUSED const char *shared_folder, const char *cache_path, const char *profile_path, char **shared_dir, char **cache_dir)
+// A loadable plugin lives in its own folder on an installed copy: FHS keeps executables in the
+// library folder, not in share. An unpacked tree and Windows keep them beside the executable, which
+// is shared_dir.
+
+static void folder_plugins_dir (char **plugins_dir, MAYBE_UNUSED const bool installed, MAYBE_UNUSED const bool shared_given, const char *shared_dir)
 {
-  *shared_dir = NULL;
-  *cache_dir  = NULL;
+  #if defined (PLUGINS_FOLDER)
+  if ((installed == true) && (shared_given == true))
+  {
+    *plugins_dir = hcstrdup (PLUGINS_FOLDER);
+
+    return;
+  }
+  #endif
+
+  *plugins_dir = hcstrdup (shared_dir);
+}
+
+int folder_early_dirs (const folder_request_t *folder_request, MAYBE_UNUSED const char *install_folder, MAYBE_UNUSED const char *shared_folder, const char *cache_path, const char *profile_path, char **shared_dir, char **plugins_dir, char **cache_dir)
+{
+  *shared_dir  = NULL;
+  *plugins_dir = NULL;
+  *cache_dir   = NULL;
 
   const size_t exec_path_sz = 1024;
 
@@ -565,6 +584,8 @@ int folder_early_dirs (const folder_request_t *folder_request, MAYBE_UNUSED cons
   if ((installed == true) || (profile_path != NULL))
   {
     *shared_dir = ((installed == true) && (shared_folder != NULL)) ? hcstrdup (shared_folder) : hcstrdup (install_dir);
+
+    folder_plugins_dir (plugins_dir, installed, (shared_folder != NULL), *shared_dir);
 
     // an installed hashcat caches per user, and without a home there is no cache directory
 
@@ -627,6 +648,8 @@ int folder_early_dirs (const folder_request_t *folder_request, MAYBE_UNUSED cons
   if (profile_path != NULL) cache_root = profile_path;
 
   *shared_dir = hcstrdup (shared_root);
+
+  folder_plugins_dir (plugins_dir, false, false, *shared_dir);
 
   if (cache_path != NULL)
   {
@@ -1055,12 +1078,21 @@ int folder_config_init (hashcat_ctx_t *hashcat_ctx, MAYBE_UNUSED const char *ins
    * store for later use
    */
 
+  #if defined (_POSIX)
+  char *plugins_dir = NULL;
+
+  folder_plugins_dir (&plugins_dir, installed, (shared_folder != NULL), shared_dir);
+  #else
+  char *plugins_dir = shared_dir;
+  #endif
+
   folder_config->cwd          = cwd;
   folder_config->install_dir  = install_dir;
   folder_config->profile_dir  = profile_dir;
   folder_config->cache_dir    = cache_dir;
   folder_config->session_dir  = session_dir;
   folder_config->shared_dir   = shared_dir;
+  folder_config->plugins_dir  = plugins_dir;
   folder_config->cpath_real   = cpath_real;
 
   return 0;
@@ -1100,6 +1132,7 @@ void folder_config_destroy (hashcat_ctx_t *hashcat_ctx)
 
   if (folder_config->profile_dir != folder_config->install_dir) hcfree (folder_config->profile_dir);
   if (folder_config->session_dir != folder_config->install_dir) hcfree (folder_config->session_dir);
+  if ((folder_config->plugins_dir != folder_config->install_dir) && (folder_config->plugins_dir != folder_config->shared_dir)) hcfree (folder_config->plugins_dir);
   if (folder_config->shared_dir  != folder_config->install_dir) hcfree (folder_config->shared_dir);
 
   hcfree (folder_config->install_dir);

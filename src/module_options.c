@@ -604,20 +604,22 @@ int module_options_init (hashcat_ctx_t *hashcat_ctx, const char *install_folder,
   // Without a folder there are no modules and so no module options. The session reports the missing
   // module once it loads the one it needs.
 
-  char *shared_dir = NULL;
-  char *cache_dir  = NULL;
+  char *shared_dir  = NULL;
+  char *plugins_dir = NULL;
+  char *cache_dir   = NULL;
 
-  if (folder_early_dirs (&hashcat_ctx->folder_config->request, install_folder, shared_folder, user_options->cache_path, user_options->profile_dir, &shared_dir, &cache_dir) == -1) return 0;
+  if (folder_early_dirs (&hashcat_ctx->folder_config->request, install_folder, shared_folder, user_options->cache_path, user_options->profile_dir, &shared_dir, &plugins_dir, &cache_dir) == -1) return 0;
 
   folder_config_t folder_config;
 
   memset (&folder_config, 0, sizeof (folder_config));
 
-  folder_config.shared_dir = shared_dir;
+  folder_config.shared_dir  = shared_dir;
+  folder_config.plugins_dir = plugins_dir;
 
   char *modules_dir = NULL;
 
-  hc_asprintf (&modules_dir, "%s/modules", shared_dir);
+  hc_asprintf (&modules_dir, "%s/modules", plugins_dir);
 
   char **files = scan_directory (modules_dir);
 
@@ -745,6 +747,7 @@ int module_options_init (hashcat_ctx_t *hashcat_ctx, const char *install_folder,
   hcfree (module_file);
   hcfree (modes);
   hcfree (cache_dir);
+  hcfree (plugins_dir);
   hcfree (shared_dir);
 
   module_options_conflicts (hashcat_ctx, module_options);

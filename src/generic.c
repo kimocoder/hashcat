@@ -52,9 +52,9 @@ static bool generic_global_error (hashcat_ctx_t *hashcat_ctx, generic_global_ctx
 int generic_filename (const folder_config_t *folder_config, const char *plugin_name, const char *prefix, char *out_buf, const size_t out_size)
 {
   #if defined (_WIN) || defined (__CYGWIN__)
-  return snprintf (out_buf, out_size, "%s/feeds/%s%s.dll", folder_config->shared_dir, prefix, plugin_name);
+  return snprintf (out_buf, out_size, "%s/feeds/%s%s.dll", folder_config->plugins_dir, prefix, plugin_name);
   #else
-  return snprintf (out_buf, out_size, "%s/feeds/%s%s.so", folder_config->shared_dir, prefix, plugin_name);
+  return snprintf (out_buf, out_size, "%s/feeds/%s%s.so", folder_config->plugins_dir, prefix, plugin_name);
   #endif
 }
 

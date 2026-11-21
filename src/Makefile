@@ -329,6 +329,7 @@ SHARED_FOLDER           ?= $(SHARED_ROOT_FOLDER)/hashcat
 DOCUMENT_FOLDER         ?= $(SHARED_ROOT_FOLDER)/doc/hashcat
 MANUAL_FOLDER           ?= $(SHARED_ROOT_FOLDER)/man/man1
 LIBRARY_FOLDER          ?= $(PREFIX)/lib
+PLUGINS_FOLDER          ?= $(LIBRARY_FOLDER)/hashcat
 LIBRARY_DEV_ROOT_FOLDER ?= $(PREFIX)/include
 LIBRARY_DEV_FOLDER      ?= $(LIBRARY_DEV_ROOT_FOLDER)/hashcat
 
@@ -797,6 +798,14 @@ LFLAGS_NATIVE           += $(LFLAGS_WIN_STACK)
 # toolchain would otherwise resolve out of MSYS2's own bin directory is therefore linked statically.
 endif # MSYS2
 
+# The FHS keeps executable files out of share/, so an installed copy puts its three plugin
+# directories under the library folder. Windows has no install prefix and reads them beside the
+# executable, which folder.c falls back to when PLUGINS_FOLDER is not defined.
+
+ifneq ($(filter CYGWIN MSYS2,$(UNAME)),$(UNAME))
+CFLAGS_NATIVE           += -DPLUGINS_FOLDER=\"$(PLUGINS_FOLDER)\"
+endif
+
 # A core object is linked into shared objects, so it is compiled position independent. The two cross
 # sets carry -fPIC of their own because they are also the flags their frontend is compiled with. The
 # native set is not, so the native object rule is where it is added.
@@ -865,6 +874,7 @@ CFLAGS_WIN              := $(filter-out $(CFLAGS_HOST_ONLY),$(CFLAGS))
 CFLAGS_WIN              += -fPIC
 CFLAGS_WIN              += -DWITH_HWMON
 CFLAGS_WIN              += -DWINVER=0x0601 -D_WIN32_WINNT=0x0601
+CFLAGS_LINUX            += -DPLUGINS_FOLDER=\"$(PLUGINS_FOLDER)\"
 
 # clang is one compiler for every target and has to be told which one it is building for. A cross gcc
 # is a compiler for a single target and needs nothing said. The flag is kept in a variable of its own
@@ -1467,7 +1477,7 @@ obj/api.c: $(API_HEADER_ROOTS)
 ##
 
 ARRANGEMENT             := SHARED=$(SHARED) PLUGIN_ABI=$(MODULE_INTERFACE_VERSION) PLUGINS=$(PLUGIN_PLATFORM_so)
-ARRANGEMENT             += INSTALL_FOLDER=$(INSTALL_FOLDER) SHARED_FOLDER=$(SHARED_FOLDER) DOCUMENT_FOLDER=$(DOCUMENT_FOLDER) LIBRARY_FOLDER=$(LIBRARY_FOLDER)
+ARRANGEMENT             += INSTALL_FOLDER=$(INSTALL_FOLDER) SHARED_FOLDER=$(SHARED_FOLDER) DOCUMENT_FOLDER=$(DOCUMENT_FOLDER) LIBRARY_FOLDER=$(LIBRARY_FOLDER) PLUGINS_FOLDER=$(PLUGINS_FOLDER)
 
 # A compiler switch or a flag change rebuilds what the switch decides, and make cannot see either.
 # The compiler and the flags are part of the answer for the same reason the switches above are.
@@ -1960,9 +1970,9 @@ install_kernels: install_shared
 
 .PHONY: install_modules
 install_modules: install_shared modules
-	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(SHARED_FOLDER)/modules
-	$(FIND) modules/  -mindepth 1 -type d -execdir $(INSTALL) -m 755 -d     $(DESTDIR)$(SHARED_FOLDER)/modules/{} \;
-	$(FIND) modules/  -mindepth 1 -type f -execdir $(INSTALL) -p -m 644 {}  $(DESTDIR)$(SHARED_FOLDER)/modules/{} \;
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(PLUGINS_FOLDER)/modules
+	$(FIND) modules/  -mindepth 1 -type d -execdir $(INSTALL) -m 755 -d     $(DESTDIR)$(PLUGINS_FOLDER)/modules/{} \;
+	$(FIND) modules/  -mindepth 1 -type f -execdir $(INSTALL) -p -m 644 {}  $(DESTDIR)$(PLUGINS_FOLDER)/modules/{} \;
 
 .PHONY: install_module_cache
 install_module_cache: install_shared $(HASHCAT_FRONTEND) modules
@@ -1983,15 +1993,15 @@ install_python: install_shared
 
 .PHONY: install_bridges
 install_bridges: install_shared bridges
-	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(SHARED_FOLDER)/bridges
-	$(FIND) bridges/  -mindepth 1 -type d -exec $(INSTALL) -m 755 -d        $(DESTDIR)$(SHARED_FOLDER)/{} \;
-	$(FIND) bridges/  -mindepth 1 -type f -exec $(INSTALL) -m 644 {}        $(DESTDIR)$(SHARED_FOLDER)/{} \;
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(PLUGINS_FOLDER)/bridges
+	$(FIND) bridges/  -mindepth 1 -type d -exec $(INSTALL) -m 755 -d        $(DESTDIR)$(PLUGINS_FOLDER)/{} \;
+	$(FIND) bridges/  -mindepth 1 -type f -exec $(INSTALL) -m 644 {}        $(DESTDIR)$(PLUGINS_FOLDER)/{} \;
 
 .PHONY: install_feeds
 install_feeds: install_shared feeds
-	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(SHARED_FOLDER)/feeds
-	$(FIND) feeds/    -mindepth 1 -type d -execdir $(INSTALL) -m 755 -d     $(DESTDIR)$(SHARED_FOLDER)/feeds/{} \;
-	$(FIND) feeds/    -mindepth 1 -type f -execdir $(INSTALL) -m 644 {}     $(DESTDIR)$(SHARED_FOLDER)/feeds/{} \;
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(PLUGINS_FOLDER)/feeds
+	$(FIND) feeds/    -mindepth 1 -type d -execdir $(INSTALL) -m 755 -d     $(DESTDIR)$(PLUGINS_FOLDER)/feeds/{} \;
+	$(FIND) feeds/    -mindepth 1 -type f -execdir $(INSTALL) -m 644 {}     $(DESTDIR)$(PLUGINS_FOLDER)/feeds/{} \;
 
 .PHONY: install_library
 install_library: $(HASHCAT_LIBRARY)
@@ -2030,5 +2040,6 @@ uninstall:
 	$(RM) -f  $(DESTDIR)$(LIBRARY_FOLDER)/$(HASHCAT_LIBRARY)
 	$(RM) -rf $(DESTDIR)$(LIBRARY_DEV_FOLDER)
 	$(RM) -rf $(DESTDIR)$(SHARED_FOLDER)
+	$(RM) -rf $(DESTDIR)$(PLUGINS_FOLDER)
 	$(RM) -rf $(DESTDIR)$(DOCUMENT_FOLDER)
 	$(RM) -f  $(DESTDIR)$(MANUAL_FOLDER)/hashcat.1

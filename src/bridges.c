@@ -24,9 +24,9 @@ int bridge_filename (const folder_config_t *folder_config, const char *bridge_na
 {
   // native compiled
   #if defined (_WIN) || defined (__CYGWIN__)
-  return snprintf (out_buf, out_size, "%s/bridges/bridge_%s.dll", folder_config->shared_dir, bridge_name);
+  return snprintf (out_buf, out_size, "%s/bridges/bridge_%s.dll", folder_config->plugins_dir, bridge_name);
   #else
-  return snprintf (out_buf, out_size, "%s/bridges/bridge_%s.so", folder_config->shared_dir, bridge_name);
+  return snprintf (out_buf, out_size, "%s/bridges/bridge_%s.so", folder_config->plugins_dir, bridge_name);
   #endif
 }
 

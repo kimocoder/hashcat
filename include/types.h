@@ -3453,6 +3453,7 @@ typedef struct folder_config
   char *cache_dir;
   char *session_dir;
   char *shared_dir;
+  char *plugins_dir;
   char *cpath_real;
 
   // What a program asked for with hashcat_session_init_folders (). folder_config_destroy () keeps it,

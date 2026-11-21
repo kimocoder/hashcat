@@ -234,12 +234,9 @@ static void units_term (bridge_context_t *bridge_context)
   }
 }
 
-// Both names are resolved against hashcat's shared folder, which is the hashcat directory for a source
-// build and $PREFIX/share/hashcat for an installed one. The crate is built into
-// Rust/bridges/generic_hash/target and the build then copies it into bridges/subs, which is what make
-// install ships, so a source tree finds the cargo output and an installed build finds the copy. These
-// were relative to the current working directory before, so an installed build could not load the
-// library at all and a source build could only do it from the hashcat directory.
+// The crate output is resolved against hashcat's shared folder, which is the hashcat directory for a
+// source build and $PREFIX/share/hashcat for an installed one. The installed copy in bridges/subs is
+// a plugin and lives in the plugins folder, so an installed build finds it there.
 
 #if defined (_WIN)
 #define DEFAULT_DYNLIB_FILENAME          "Rust/bridges/generic_hash/target/x86_64-pc-windows-gnu/release/generic_hash.dll"
@@ -275,7 +272,7 @@ void *platform_init (hashcat_ctx_t *hashcat_ctx)
     {
       hcfree (bridge_context->dynlib_filename);
 
-      hc_asprintf (&bridge_context->dynlib_filename, "%s/%s", folder_config->shared_dir, DEFAULT_DYNLIB_FILENAME_FALLBACK);
+      hc_asprintf (&bridge_context->dynlib_filename, "%s/%s", folder_config->plugins_dir, DEFAULT_DYNLIB_FILENAME_FALLBACK);
     }
   }
 
