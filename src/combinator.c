@@ -21,10 +21,8 @@
 
 static int combinator_count_dicts (hashcat_ctx_t *hashcat_ctx, const char *dictfile1, const char *dictfile2, u64 *words1_cnt, u64 *words2_cnt)
 {
-  const generic_ctx_t *generic_ctx = hashcat_ctx->generic_ctx;
-
-  words1_cnt[0] = generic_ctx[GENERIC_ROLE_BASE].keyspace;
-  words2_cnt[0] = generic_ctx[GENERIC_ROLE_AMP].keyspace;
+  words1_cnt[0] = generic_ctx_keyspace_u64 (hashcat_ctx, GENERIC_ROLE_BASE);
+  words2_cnt[0] = generic_ctx_keyspace_u64 (hashcat_ctx, GENERIC_ROLE_AMP);
 
   // A feed that cannot count itself has no place here, because -a 1 divides one of these counts into
   // the other to build its keyspace
@@ -118,7 +116,11 @@ int combinator_ctx_init (hashcat_ctx_t *hashcat_ctx)
                               || (hashconfig->attack_exec == ATTACK_EXEC_OUTSIDE_KERNEL)
                               || (hashconfig->opts_type & OPTS_TYPE_COMBI_PURE_SWAP);
 
-    const bool swap = (user_options->attack_mode_typed == ATTACK_MODE_COMBI) && kernel_can_swap && (words1_cnt < words2_cnt);
+    // --slow-candidates builds every candidate on the host, where hybrid_assemble () always puts the
+    // base word in front. No kernel assembles anything there, so there is nothing to gain from the
+    // swap and a swapped run would try every pair the wrong way round.
+
+    const bool swap = (user_options->attack_mode_typed == ATTACK_MODE_COMBI) && (user_options->slow_candidates == false) && (kernel_can_swap == true) && (words1_cnt < words2_cnt);
 
     if (swap == true)
     {
@@ -142,11 +144,11 @@ int combinator_ctx_init (hashcat_ctx_t *hashcat_ctx)
 
   if (user_options_extra->base_source == BASE_SOURCE_MASK)
   {
-    const generic_ctx_t *generic_ctx = &hashcat_ctx->generic_ctx[GENERIC_ROLE_AMP];
+    const u64 words_cnt = generic_ctx_keyspace_u64 (hashcat_ctx, GENERIC_ROLE_AMP);
 
     char *dictfile = user_options_extra->hc_workv[1];
 
-    if (generic_ctx->keyspace == GENERIC_KEYSPACE_UNKNOWN)
+    if (words_cnt == GENERIC_KEYSPACE_UNKNOWN)
     {
       event_log_error (hashcat_ctx, "%s: feed cannot report a keyspace.", dictfile);
 
@@ -155,7 +157,7 @@ int combinator_ctx_init (hashcat_ctx_t *hashcat_ctx)
       return -1;
     }
 
-    combinator_ctx->combs_cnt  = generic_ctx->keyspace;
+    combinator_ctx->combs_cnt  = words_cnt;
     combinator_ctx->combs_mode = COMBINATOR_MODE_BASE_LEFT;
   }
 

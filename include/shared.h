@@ -6,6 +6,8 @@
 #ifndef HC_SHARED_H
 #define HC_SHARED_H
 
+#include "u128.h"
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,6 +29,11 @@ HC_PLUGIN_API bool overflow_check_u32_add (const u32 a, const u32 b);
 HC_PLUGIN_API bool overflow_check_u32_mul (const u32 a, const u32 b);
 HC_PLUGIN_API bool overflow_check_u64_add (const u64 a, const u64 b);
 HC_PLUGIN_API bool overflow_check_u64_mul (const u64 a, const u64 b);
+
+// The u128 helpers the core shares with the feeds are in u128.h, included above. This one is the
+// core's own.
+
+bool hc_strtou128 (const char *str, u128 *out);
 
 HC_PLUGIN_API bool is_power_of_2 (const u32 v);
 HC_PLUGIN_API u32 smallest_repeat_double (const u32 v);

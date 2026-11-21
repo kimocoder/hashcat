@@ -94,11 +94,9 @@ int gidd_to_pw_t                            (hashcat_ctx_t *hashcat_ctx, hc_devi
 int gidd_to_pw_t_host                       (const hc_device_param_t *device_param, const u64 gidd, pw_t *pw);
 
 u64 gidvid_to_feed_pos                      (const hc_device_param_t *device_param, const u64 gidvid);
-u64 gidvid_to_word_pos                      (const hc_device_param_t *device_param, const u64 gidvid);
+u128 gidvid_to_word_pos                     (const hc_device_param_t *device_param, const u64 gidvid);
 
 bool is_opti_kernel_no_pcfg                 (const hashcat_ctx_t *hashcat_ctx);
-
-int choose_kernel                           (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u32 highest_pw_len, const u64 pws_pos, const u64 pws_cnt, const u32 fast_iteration, const u32 salt_pos, const bool is_autotune);
 
 // The device primitives. Each of these is the one place a backend is chosen for the operation it
 // names, so code above them works in slots and sizes rather than in four runtimes.
@@ -122,6 +120,7 @@ int run_kernel_memset32                     (hashcat_ctx_t *hashcat_ctx, hc_devi
 
 int run_kernel                              (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u32 kern_run, const u64 pws_pos, const u64 num, const u32 event_update, const u32 iteration, const bool is_autotune);
 bool run_kernels_wanted                     (hashcat_ctx_t *hashcat_ctx);
+u32  salts_in_turn                          (const hashcat_ctx_t *hashcat_ctx);
 hc_dev_kern_t run_kernel_slot               (hashcat_ctx_t *hashcat_ctx, const hc_device_param_t *device_param, const u32 kern_run);
 int run_bridge_loop                         (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u32 salt_pos, const u64 pws_cnt, const u32 loop_pos, const u32 loop_cnt, const u32 event_update);
 int run_kernel_mp                           (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u32 kern_run, const u64 num);
@@ -130,7 +129,7 @@ int run_kernel_amp                          (hashcat_ctx_t *hashcat_ctx, hc_devi
 int run_kernel_decompress                   (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u64 num);
 int run_copy                                (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u64 pws_cnt);
 int pcfg_seed_cells                         (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param);
-int run_cracker                             (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u64 pws_pos, const u64 pws_cnt);
+int run_cracker                             (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u128 pws_pos, const u64 pws_cnt);
 
 HC_THREAD_FUNC hook12_thread (void *p);
 HC_THREAD_FUNC hook23_thread (void *p);

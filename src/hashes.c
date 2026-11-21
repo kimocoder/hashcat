@@ -1821,7 +1821,6 @@ int check_hash (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, pla
   const loopback_ctx_t  *loopback_ctx  = hashcat_ctx->loopback_ctx;
   const module_ctx_t    *module_ctx    = hashcat_ctx->module_ctx;
   const pubkey_ctx_t    *pubkey_ctx    = hashcat_ctx->pubkey_ctx;
-  const user_options_t  *user_options  = hashcat_ctx->user_options;
 
   const u32 salt_pos    = plain->salt_pos;
   const u32 digest_pos  = plain->digest_pos;  // relative
@@ -1980,7 +1979,7 @@ int check_hash (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, pla
 
   // crackpos
 
-  u64 crackpos = 0;
+  u128 crackpos = 0;
 
   build_crackpos (hashcat_ctx, device_param, plain, &crackpos);
 
@@ -2105,19 +2104,14 @@ int check_hash (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, pla
       // of. build_crackpos takes the same number and multiplies it by the amplifier; debug mode 5
       // wants it before that.
 
-      u64 word_pos = gidvid_to_word_pos (device_param, plain->gidvid);
+      u128 word_pos = gidvid_to_word_pos (device_param, plain->gidvid);
 
       // --slow-candidates expands the amplifier on the host, so a position in that keyspace counts
-      // candidates where the feed's segment table counts lines. Dividing brings the two back into the
-      // same unit, and without it a candidate index past the first wordlist's line count names the
-      // second wordlist for words that came out of the first.
+      // candidates where the feed's segment table counts lines. Without the conversion a candidate
+      // index past the first wordlist's line count names the second wordlist for words that came out
+      // of the first.
 
-      if (user_options->slow_candidates == true)
-      {
-        const u64 amplifier = status_get_amplifier_cnt (hashcat_ctx);
-
-        if (amplifier > 1) word_pos = word_pos / amplifier;
-      }
+      word_pos = status_get_base_word (hashcat_ctx, word_pos);
 
       debugfile_write_append (hashcat_ctx, debug_rule_buf, debug_rule_len, plain_ptr, plain_len, debug_plain_ptr, debug_plain_len, word_pos);
     }
@@ -3922,6 +3916,108 @@ static int hashes_check_hashfile (hashcat_ctx_t *hashcat_ctx)
   return -1;
 }
 
+static int hashes_override_iterations (hashcat_ctx_t *hashcat_ctx, hash_t *hashes_buf, const u32 hashes_cnt)
+{
+  const char *value = getenv ("HASHCAT_ITER_OVERRIDE");
+
+  if (value == NULL) return 0;
+
+  u64 iterations = 0;
+
+  for (u32 i = 0; value[i] != 0; i++)
+  {
+    if ((value[i] < '0') || (value[i] > '9'))
+    {
+      event_log_error (hashcat_ctx, "HASHCAT_ITER_OVERRIDE must be an integer from 0 to 4294967295.");
+
+      return -1;
+    }
+
+    iterations = iterations * 10 + (value[i] - '0');
+
+    if (iterations > 0xffffffffULL)
+    {
+      event_log_error (hashcat_ctx, "HASHCAT_ITER_OVERRIDE must be an integer from 0 to 4294967295.");
+
+      return -1;
+    }
+  }
+
+  if (value[0] == 0)
+  {
+    event_log_error (hashcat_ctx, "HASHCAT_ITER_OVERRIDE must be an integer from 0 to 4294967295.");
+
+    return -1;
+  }
+
+  event_log_warning (hashcat_ctx, "HASHCAT_ITER_OVERRIDE=%u: test-only iteration override requested.", (u32) iterations);
+
+  const hashconfig_t *hashconfig = hashcat_ctx->hashconfig;
+
+  if (hashcat_ctx->user_options->remove == true)
+  {
+    event_log_error (hashcat_ctx, "HASHCAT_ITER_OVERRIDE cannot be used with --remove.");
+
+    return -1;
+  }
+
+  if ((hashconfig->opts_type & (OPTS_TYPE_ITERATION_OVERRIDE | OPTS_TYPE_SCRYPT_OVERRIDE)) == 0)
+  {
+    event_log_error (hashcat_ctx, "Hash mode %u does not support HASHCAT_ITER_OVERRIDE.", hashconfig->hash_mode);
+
+    return -1;
+  }
+
+  if (iterations == 0) return 0;
+
+  // Only loaded salts are changed. The startup self-test has its own salt.
+
+  for (u32 i = 0; i < hashes_cnt; i++)
+  {
+    salt_t *salt = hashes_buf[i].salt;
+
+    if ((hashconfig->opts_type & OPTS_TYPE_SCRYPT_OVERRIDE) != 0)
+    {
+      u32 n = 1024;
+
+      while (((u64) n * 2) <= iterations) n *= 2;
+
+      const u32 original_n = salt->scrypt_N;
+
+      if (n > original_n) n = original_n;
+
+      salt->scrypt_N = n;
+
+      if (salt->salt_iter  == original_n) salt->salt_iter  = n;
+      if (salt->salt_iter2 == original_n) salt->salt_iter2 = n;
+
+      continue;
+    }
+
+    if (salt->salt_iter  > iterations) salt->salt_iter  = (u32) iterations;
+    if (salt->salt_iter2 > iterations) salt->salt_iter2 = (u32) iterations;
+  }
+
+  return 0;
+}
+
+// The copy of a hash that OPTS_TYPE_HASH_COPY and --hash-copy keep for the potfile and the outfile.
+// hlfmt_hash () hands back a pointer into the line and a length, and in a passwd, shadow or pwdump
+// line the line goes on after the hash, so the copy is bounded by that length.
+
+static char *hash_copy_orig (const char *hash_buf, const int hash_len)
+{
+  char *orig = (char *) hcmalloc ((size_t) hash_len + 1);
+
+  if (orig == NULL) return NULL;
+
+  memcpy (orig, hash_buf, (size_t) hash_len);
+
+  orig[hash_len] = 0;
+
+  return orig;
+}
+
 int hashes_init_stage1 (hashcat_ctx_t *hashcat_ctx)
 {
   hashconfig_t          *hashconfig         = hashcat_ctx->hashconfig;
@@ -4297,7 +4393,7 @@ int hashes_init_stage1 (hashcat_ctx_t *hashcat_ctx)
 
           hcfree (hash_info_tmp->orighash);
 
-          hash_info_tmp->orighash = hcstrdup (hash_buf);
+          hash_info_tmp->orighash = hash_copy_orig (hash_buf, hash_len);
         }
 
         if (hashconfig->is_salted == true)
@@ -4742,7 +4838,7 @@ int hashes_init_stage1 (hashcat_ctx_t *hashcat_ctx)
 
           hcfree (hash_info_tmp->orighash);
 
-          hash_info_tmp->orighash = hcstrdup (hash_buf);
+          hash_info_tmp->orighash = hash_copy_orig (hash_buf, hash_len);
         }
 
         if (hashconfig->is_salted == true)
@@ -5183,6 +5279,8 @@ int hashes_init_stage1 (hashcat_ctx_t *hashcat_ctx)
 
   hashes->hashes_cnt = hashes_cnt;
 
+  if (hashes_override_iterations (hashcat_ctx, hashes_buf, hashes_cnt) == -1) return -1;
+
   if (hashes_cnt)
   {
     EVENT (EVENT_HASHLIST_SORT_HASH_PRE);
@@ -5427,20 +5525,33 @@ static HC_THREAD_FUNC hashes_group_thread (void *p)
       salt_buf->digests_done   = 0;
       salt_buf->digests_offset = offsets[salt_idx];
 
-      if (hook_salt_size > 0)
-      {
-        memcpy (param->hook_salts_buf_new + ((u64) salt_idx * hook_salt_size), hashes_buf[i].hook_salt, hook_salt_size);
-      }
-
       hashes_buf[i].salt = salt_buf;
-
-      if (hook_salt_size > 0) hashes_buf[i].hook_salt = param->hook_salts_buf_new + ((u64) salt_idx * hook_salt_size);
     }
     else if (hashconfig->is_salted == true)
     {
       hashes_buf[i].salt = &salts_buf_new[salt_idx];
+    }
 
-      if (hook_salt_size > 0) hashes_buf[i].hook_salt = param->hook_salts_buf_new + ((u64) salt_idx * hook_salt_size);
+    if (hook_salt_size > 0)
+    {
+      if (hashconfig->opts_type & OPTS_TYPE_HOOK_SALT_PER_DIGEST)
+      {
+        // the slot stays with the digest, not the salt: digests that share a salt keep
+        // their own hook data
+
+        memcpy (param->hook_salts_buf_new + ((u64) i * hook_salt_size), hashes_buf[i].hook_salt, hook_salt_size);
+
+        hashes_buf[i].hook_salt = param->hook_salts_buf_new + ((u64) i * hook_salt_size);
+      }
+      else
+      {
+        if (i == offsets[salt_idx])
+        {
+          memcpy (param->hook_salts_buf_new + ((u64) salt_idx * hook_salt_size), hashes_buf[i].hook_salt, hook_salt_size);
+        }
+
+        hashes_buf[i].hook_salt = param->hook_salts_buf_new + ((u64) salt_idx * hook_salt_size);
+      }
     }
 
     if (param->digests_buf_new != NULL)
@@ -6001,15 +6112,27 @@ int hashes_init_stage4 (hashcat_ctx_t *hashcat_ctx)
     }
   }
 
-  // test iteration count in association attack
+  // An association attack launches every salt at once, with the loops of the first one. Its kernels
+  // take each work item's own salt, but the host runs every loop and repeat as salt 0 asks, so a hash
+  // with other counts would never crack.
 
   if (user_options->attack_mode == ATTACK_MODE_ASSOCIATION)
   {
-    salt_t *salts_buf = hashes->salts_buf;
+    const salt_t *salts_buf = hashes->salts_buf;
 
     for (u32 salt_idx = 1; salt_idx < hashes->salts_cnt; salt_idx++)
     {
-      if (salts_buf[salt_idx - 1].salt_iter != salts_buf[salt_idx].salt_iter)
+      const salt_t *prev = &salts_buf[salt_idx - 1];
+      const salt_t *salt = &salts_buf[salt_idx];
+
+      bool mixed = false;
+
+      if (prev->salt_iter    != salt->salt_iter)    mixed = true;
+      if (prev->salt_iter2   != salt->salt_iter2)   mixed = true;
+      if (prev->salt_iter3   != salt->salt_iter3)   mixed = true;
+      if (prev->salt_repeats != salt->salt_repeats) mixed = true;
+
+      if (mixed == true)
       {
         event_log_error (hashcat_ctx, "Mixed iteration counts are not supported in association attack-mode.");
 

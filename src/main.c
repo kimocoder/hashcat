@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <getopt.h>
+#include <signal.h>
 
 #include "types.h"
 #include "user_options.h"
@@ -438,10 +439,14 @@ static void main_clear_event_line (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, MAYB
   event_log_info_nn (hashcat_ctx, NULL);
 }
 
+static volatile sig_atomic_t sigterm_received = 0;
+
 static void main_cracker_starting (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, MAYBE_UNUSED const void *buf, MAYBE_UNUSED const size_t len)
 {
   const user_options_t       *user_options       = hashcat_ctx->user_options;
   const user_options_extra_t *user_options_extra = hashcat_ctx->user_options_extra;
+
+  if (sigterm_received == 1) hashcat_session_quit (hashcat_ctx);
 
   if (user_options->quiet == true) return;
 
@@ -583,13 +588,15 @@ static void main_calculated_words_base (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx,
 
   if (user_options->lookup != NULL) return;
 
+  char dec_buf[U128_DEC_SIZE];
+
   if (user_options->json == true)
   {
-    event_log_info (hashcat_ctx, "{ \"keyspace\": %" PRIu64 " }", status_ctx->words_base);
+    event_log_info (hashcat_ctx, "{ \"keyspace\": %s }", u128_to_dec (dec_buf, status_ctx->words_base));
   }
   else
   {
-    event_log_info (hashcat_ctx, "%" PRIu64 "", status_ctx->words_base);
+    event_log_info (hashcat_ctx, "%s", u128_to_dec (dec_buf, status_ctx->words_base));
   }
 }
 
@@ -601,13 +608,15 @@ static void main_calculated_words_cnt (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, 
   if (user_options->keyspace == false) return;
   if (user_options->total_candidates == false) return;
 
+  char dec_buf[U128_DEC_SIZE];
+
   if (user_options->json == true)
   {
-    event_log_info (hashcat_ctx, "{ \"total_candidates\": %" PRIu64 " }", status_ctx->words_cnt);
+    event_log_info (hashcat_ctx, "{ \"total_candidates\": %s }", u128_to_dec (dec_buf, status_ctx->words_cnt));
   }
   else
   {
-    event_log_info (hashcat_ctx, "%" PRIu64 "", status_ctx->words_cnt);
+    event_log_info (hashcat_ctx, "%s", u128_to_dec (dec_buf, status_ctx->words_cnt));
   }
 }
 
@@ -2202,6 +2211,15 @@ static void event (const u32 id, hashcat_ctx_t *hashcat_ctx, const void *buf, co
   }
 }
 
+static hashcat_ctx_t *volatile sigterm_hashcat_ctx = NULL;
+
+static void sigterm_abort (MAYBE_UNUSED const int sig)
+{
+  sigterm_received = 1;
+
+  if (sigterm_hashcat_ctx != NULL) hashcat_session_quit (sigterm_hashcat_ctx);
+}
+
 int main (int argc, char **argv)
 {
   // before any library is loaded, and on Windows only, so that a library found by name cannot come
@@ -2270,10 +2288,13 @@ int main (int argc, char **argv)
   // parse commandline parameters and check them
 
   // getopt and sanity reject a wrong command line, so they exit with -2
+  // getopt leaves no option table only when the table could not be allocated, and that exits with -1.
 
   if (user_options_getopt (hashcat_ctx, argc, argv) == -1)
   {
-    main_error_banner (hashcat_ctx, RC_FINAL_ERROR_COMMAND, hashcat_ctx->user_options->quiet);
+    const rc_final_t rc_getopt = (hashcat_ctx->user_options->option_table == NULL) ? RC_FINAL_ERROR : RC_FINAL_ERROR_COMMAND;
+
+    main_error_banner (hashcat_ctx, rc_getopt, hashcat_ctx->user_options->quiet);
 
     user_options_destroy (hashcat_ctx);
 
@@ -2281,7 +2302,7 @@ int main (int argc, char **argv)
 
     hcfree (hashcat_ctx);
 
-    return RC_FINAL_ERROR_COMMAND;
+    return rc_getopt;
   }
 
   if (user_options_sanity (hashcat_ctx) == -1)
@@ -2403,7 +2424,15 @@ int main (int argc, char **argv)
 
       user_options_info (hashcat_ctx);
 
+      sigterm_hashcat_ctx = hashcat_ctx;
+
+      signal (SIGTERM, sigterm_abort);
+
       rc_final = hashcat_session_execute (hashcat_ctx);
+
+      signal (SIGTERM, SIG_IGN);
+
+      sigterm_hashcat_ctx = NULL;
     }
   }
 
@@ -2413,6 +2442,8 @@ int main (int argc, char **argv)
   // while status_ctx is still valid.
 
   const rc_final_t rc_error = status_get_rc_error (hashcat_ctx);
+
+  if ((sigterm_received == 1) && ((rc_final == RC_FINAL_OK) || (rc_final == RC_FINAL_EXHAUSTED)) && (hashcat_ctx->status_ctx->devices_status != STATUS_CRACKED)) rc_final = RC_FINAL_ABORT;
 
   // A bridge failure that did not end the run, such as one only autotune saw, does not turn a later
   // quit into an error.

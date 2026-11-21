@@ -121,6 +121,7 @@ void hc_signal (void (callback) (int));
 */
 
 int mycracked (hashcat_ctx_t *hashcat_ctx);
+int myerror (hashcat_ctx_t *hashcat_ctx);
 int myabort_runtime (hashcat_ctx_t *hashcat_ctx);
 int myabort_checkpoint (hashcat_ctx_t *hashcat_ctx);
 int myabort_finish (hashcat_ctx_t *hashcat_ctx);
@@ -128,8 +129,8 @@ int myabort (hashcat_ctx_t *hashcat_ctx);
 int myquit (hashcat_ctx_t *hashcat_ctx);
 int bypass (hashcat_ctx_t *hashcat_ctx);
 int bypass_seek_step (hashcat_ctx_t *hashcat_ctx, const int direction);
-u64 seek_position (const hashcat_ctx_t *hashcat_ctx);
-double seek_percent (const hashcat_ctx_t *hashcat_ctx, const u64 words);
+u128 seek_position (const hashcat_ctx_t *hashcat_ctx);
+double seek_percent (const hashcat_ctx_t *hashcat_ctx, const u128 words);
 void seek_apply (hashcat_ctx_t *hashcat_ctx);
 int runtime_adjust (hashcat_ctx_t *hashcat_ctx, const int seconds);
 int SuspendThreads (hashcat_ctx_t *hashcat_ctx);

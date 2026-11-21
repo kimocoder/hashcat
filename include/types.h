@@ -634,6 +634,7 @@ typedef enum hc_dev_buf
   HC_DEV_BUF_PCFG_CELLS,
   HC_DEV_BUF_PCFG_POOL,
   HC_DEV_BUF_PCFG_WMAP,
+  HC_DEV_BUF_SWEEP_BUF,
   HC_DEV_BUF_CNT,
 
 } hc_dev_buf_t;
@@ -775,8 +776,8 @@ typedef enum opts_type
   OPTS_TYPE_PT_UPPER                 = (1ULL <<  2),
   OPTS_TYPE_PT_LOWER                 = (1ULL <<  3),
   OPTS_TYPE_PT_ADD01                 = (1ULL <<  4),
-  // Bit 5 held OPTS_TYPE_PT_ADD02, which no module ever set and nothing ever read, and then
-  // OPTS_TYPE_AUX5. Both are gone and the bit is free.
+  // Both salt iteration fields are plain loop counts that support a test-only cap.
+  OPTS_TYPE_ITERATION_OVERRIDE       = (1ULL <<  5),
   OPTS_TYPE_PT_ADD80                 = (1ULL <<  6),
   OPTS_TYPE_PT_ADDBITS14             = (1ULL <<  7),
   OPTS_TYPE_PT_ADDBITS15             = (1ULL <<  8),
@@ -810,12 +811,16 @@ typedef enum opts_type
   // says how many work groups an SM holds, the backend drops a mostly empty last wave from it.
   OPTS_TYPE_ACCEL_WHOLE_WAVES        = (1ULL << 32),
 
+  // The module supports the separate test-only scrypt N override.
+  OPTS_TYPE_SCRYPT_OVERRIDE          = (1ULL << 34),
+
                                                      // like a hook12 kernel but without extra buffers.
                                                      // but unlike a hook kernel this kernel is called for every _loop iteration offset
   OPTS_TYPE_BINARY_HASHFILE          = (1ULL << 45),
   OPTS_TYPE_BINARY_HASHFILE_OPTIONAL = (1ULL << 46), // this allows us to not enforce the use of a binary file. requires OPTS_TYPE_BINARY_HASHFILE set to be effective.
   OPTS_TYPE_PT_ADD06                 = (1ULL << 47),
   OPTS_TYPE_KEYBOARD_MAPPING         = (1ULL << 48),
+  OPTS_TYPE_HOOK_SALT_PER_DIGEST     = (1ULL << 44), // hook_salt slots stay one per digest after salt grouping (default: one per salt)
   OPTS_TYPE_DEEP_COMP_KERNEL         = (1ULL << 49), // if we have to iterate through each hash inside the comp kernel, for example if each hash has to be decrypted separately
 
   // The single-hash brute-force kernels have a sibling, m<type>_r04 to _r16, for a mask whose right
@@ -826,7 +831,7 @@ typedef enum opts_type
   OPTS_TYPE_SUGGEST_KG               = (1ULL << 51), // suggest keep guessing for modules the user maybe wants to use --keep-guessing
   OPTS_TYPE_COMBI_PURE_SWAP          = (1ULL << 33), // the _a1-pure.cl kernel assembles the candidate honoring combs_mode (handles BASE_RIGHT), so -a 1 may pick the larger wordlist as the base word source
 
-  // Bits 34 to 44 are free. They held flags that said which kernels a session
+  // Bits 35 to 43 are free. They held flags that said which kernels a session
   // runs, and those are a mask over hc_dev_kern_t now, read through hashconfig_t.kern_bits. A module
   // names the ones it provides in module_kern_bits (), and hashcat turns on _init, _loop and _comp
   // itself for a slow hash, which is what the removed INIT, LOOP and COMP flags did.
@@ -1149,7 +1154,6 @@ typedef enum user_options_defaults
   SKIP                     = 0,
   SLOW_CANDIDATES          = false,
   SPEED_ONLY               = false,
-  SPIN_DAMP                = 0,
   STATUS                   = false,
   STATUS_JSON              = false,
   PIPELINE_STATS           = false,
@@ -1274,6 +1278,7 @@ typedef enum user_options_map
   IDX_OUTFILE                   = 'o',
   IDX_POTFILE_DISABLE           = 0xff36,
   IDX_POTFILE_PATH              = 0xff37,
+  IDX_PROFILE_DIR               = 0xff94,
   IDX_PROGRESS_ONLY             = 0xff38,
   IDX_QUIET                     = 0xff39,
   IDX_REMOVE                    = 0xff3a,
@@ -1300,7 +1305,6 @@ typedef enum user_options_map
   IDX_SKIP                      = 's',
   IDX_SLOW_CANDIDATES           = 'S',
   IDX_SPEED_ONLY                = 0xff48,
-  IDX_SPIN_DAMP                 = 0xff49,
   IDX_STATUS                    = 0xff4a,
   IDX_STATUS_JSON               = 0xff4b,
   IDX_STATUS_TIMER              = 0xff4c,
@@ -1654,8 +1658,8 @@ typedef struct pw_pre
 
 typedef struct pw_run
 {
-  u64 pws_idx;    // the first candidate that came from here
-  u64 words_off;  // and its position in the keyspace
+  u64  pws_idx;   // the first candidate that came from here
+  u128 words_off; // and its position in the keyspace
 
 } pw_run_t;
 
@@ -1693,9 +1697,9 @@ typedef struct pw_batch
   // where this batch sits in the keyspace. The restore point may only advance past a batch that has
   // actually been launched, so the figures travel with the batch instead of with the device.
 
-  u64 words_off;
-  u64 words_fin;
-  u64 words_extra;
+  u128 words_off;
+  u128 words_fin;
+  u64  words_extra;
 
   pw_run_t runs_buf[PW_RUNS_MAX];
   u32      runs_cnt;
@@ -1721,7 +1725,7 @@ typedef struct cpt
 
 typedef struct curve_point
 {
-  u64       progress;
+  u128      progress;
   u32       remaining;
 
   // When the point was taken, which is what turns a window of seconds into a span of candidates.
@@ -1867,6 +1871,31 @@ typedef enum pipe_slot
   PIPE_TOTAL_END   = PIPE_SORT,
 
 } pipe_slot_t;
+
+typedef struct kernel_exec_shape
+{
+  u64 num;
+  u64 threads;
+  u64 dimy;
+  u64 vector_width;
+  u64 items_per_candidate;
+  u64 shared_mem;
+
+} kernel_exec_shape_t;
+
+// The first init, loop and comp launch of one salt in a chunk, which for a fast hash is its one launch,
+// and the loop count of the loop launch. A salt keeps one for a chunk of the full step and one for a
+// shorter chunk.
+
+#define LAUNCH_SALT_KERNS 3
+#define LAUNCH_SALT_KINDS 2
+
+typedef struct launch_salt
+{
+  float us[LAUNCH_SALT_KERNS];
+  u32   loops;
+
+} launch_salt_t;
 
 typedef struct hc_device_param
 {
@@ -2126,21 +2155,21 @@ typedef struct hc_device_param
 
   void    *h_tmps; // we need this only for bridges
 
-  u64     words_off;
+  u128    words_off;
 
   // Where the batch being launched starts. words_off above belongs to the producer, which is filling
   // the next batch while this one runs, so by the time a crack is reported it has already moved on.
   // A crack is booked at a position in the keyspace, so that position has to come from the batch and
   // not from wherever the producer happens to have got to.
 
-  u64     words_off_launch;
+  u128    words_off_launch;
 
   // and where inside that batch it goes on from somewhere else, read from the batch while it runs
 
   const pw_run_t *runs_launch_buf;
   u32             runs_launch_cnt;
 
-  u64     words_done;
+  u128    words_done;
 
   u64     outerloop_pos;
 
@@ -2156,10 +2185,6 @@ typedef struct hc_device_param
   double  outerloop_msec;
   u64     outerloop_progress;
 
-  // The running total the pair above is made from.
-
-  double  outerloop_words;
-
   u64     innerloop_pos;
   u64     innerloop_left;
 
@@ -2174,13 +2199,61 @@ typedef struct hc_device_param
 
   // workaround cpu spinning
 
-  double  exec_us_prev[HC_DEV_KERN_CNT][EXPECTED_ITERATIONS];
+  // A float holds a launch time in microseconds closely enough, so the time and the loop count of a
+  // launch take eight bytes together. hc_device_param_t is allocated DEVICES_MAX times, and
+  // brain_feed () keeps one on its stack.
 
-  // this is "current" speed
+  float   exec_us_prev[HC_DEV_KERN_CNT][EXPECTED_ITERATIONS];
+  u32     exec_loops_prev[HC_DEV_KERN_CNT][EXPECTED_ITERATIONS];
+  kernel_exec_shape_t exec_us_prev_shape[HC_DEV_KERN_CNT];
+
+  // the last launch of each kernel in the current shape
+
+  float   exec_us_last[HC_DEV_KERN_CNT];
+  u32     exec_loops_last[HC_DEV_KERN_CNT];
+
+  // the kernels test every salt of the list in one launch, see module_salt_sweep ()
+
+  bool    salt_sweep;
+
+  // the live salts of the current sweep launch by position, staged on the host and uploaded by
+  // salt_sweep_launch ()
+
+  u32    *sweep_buf_host;
+
+  // how many salts were live when the session began, so autotune and the self-test cleanup see the
+  // count the attack runs with
+
+  u32     sweep_live_cnt;
+
+  // a launch predicted from its salt, see launch_salt_t, and the launch size the records of each kind of
+  // chunk were taken at, in work items and in amplifier items per work item
+
+  launch_salt_t *launch_salt;
+
+  u32     launch_salt_cnt;
+  u64     launch_salt_num[LAUNCH_SALT_KINDS];
+  u32     launch_salt_il[LAUNCH_SALT_KINDS];
+
+  u32     launch_chunk;
+  u32     launch_chunk_kind;
+  float   launch_factor[LAUNCH_SALT_KERNS];
+  u32     launch_factor_chunk[LAUNCH_SALT_KERNS];
+
+  // the last launch of each kernel, for the next launch of the same salt in the same chunk
+
+  u32     launch_last_salt[LAUNCH_SALT_KERNS];
+  u32     launch_last_chunk[LAUNCH_SALT_KERNS];
+  u32     launch_last_loops[LAUNCH_SALT_KERNS];
+  float   launch_last_us[LAUNCH_SALT_KERNS];
+
+  // this is "current" speed. speed_words holds the base words of each launch in the ring, which
+  // --progress-only reports beside its time.
 
   u32     speed_pos;
   u64     speed_cnt[SPEED_CACHE];
   double  speed_msec[SPEED_CACHE];
+  double  speed_words[SPEED_CACHE];
   bool    speed_only_finish;
 
   hc_timer_t timer_speed;
@@ -2212,8 +2285,6 @@ typedef struct hc_device_param
   bool    has_bfe;
   bool    has_lop3;
   bool    has_shfw;
-
-  double  spin_damp;
 
   // How early the launch wait wakes up before a launch is expected to end, and the pinned host
   // memory a cracking launch uploads its parameters from and copies the crack count back into.
@@ -2892,6 +2963,11 @@ typedef struct pot_orig_line_entry
 
 } pot_orig_line_entry_t;
 
+// words_cur is the low half of the restore position. A host with the wide u128 writes the high half
+// into the argv slot, which every reader replaces with a pointer of its own after reading. Its
+// pointers are eight bytes, so words_cur_check fits the padding between argc and that slot. A 32-bit
+// host has neither field and no high half to write. See write_restore ().
+
 typedef struct restore_data
 {
   int  version;
@@ -2903,6 +2979,11 @@ typedef struct restore_data
   u64  words_cur;
 
   u32  argc;
+
+  #ifdef U128_WIDE
+  u32  words_cur_check;
+  #endif
+
   char **argv;
 
 } restore_data_t;
@@ -2940,7 +3021,11 @@ typedef struct restore_ctx
 
   u32  dicts_pos_prev;
   u32  masks_pos_prev;
-  u64  words_cur_prev;
+  u128 words_cur_prev;
+
+  // The high half of the position the restore file holds, zero for a file without one.
+
+  u64  words_cur_hi;
 
   // Set while writing the restore file keeps failing, so the error is reported once and not with
   // every update. cycle_restore () runs about once a second.
@@ -3052,7 +3137,6 @@ typedef struct user_options
   bool         kernel_accel_chgd;
   bool         kernel_loops_chgd;
   bool         kernel_threads_chgd;
-  bool         spin_damp_chgd;
   bool         backend_vector_width_chgd;
   bool         outfile_chgd;
   bool         outfile_format_chgd;
@@ -3156,6 +3240,7 @@ typedef struct user_options
   char       **rp_files;
   char        *rp_gen_func_sel;
   char        *cache_path;
+  char        *profile_dir;
   char        *separator;
   const char  *custom_charset_1;
   const char  *custom_charset_2;
@@ -3212,7 +3297,6 @@ typedef struct user_options
   u32          kernel_loops;
   u32          kernel_threads;
   u32          markov_threshold;
-  u32          spin_damp;
   u32          backend_vector_width;
   u32          outfile_check_timer;
   u32          outfile_format;
@@ -3229,8 +3313,8 @@ typedef struct user_options
   u32          stdin_timeout_abort;
   u32          stdin_timeout_flush;
   u32          usage;
-  u64          limit;
-  u64          skip;
+  u128         limit;
+  u128         skip;
   u64          stdin_count;
   bool         hash_copy;
 
@@ -3454,7 +3538,7 @@ typedef struct mask_lookup
   u32   round;      // masks_pos of the round that reached it
   char  mask[0x400]; // as wide as mf_t's, so no mask a maskfile can hold is truncated
 
-  u64   word;       // the -s value, counted from the start of the queue
+  u128  word;       // the -s value, counted from the start of the queue
   u64   amp;        // where in that base word's cell the candidate sits
   u64   amp_cnt;    // how wide the cell is, which is 1 when -s counts candidates
 
@@ -3502,7 +3586,7 @@ typedef struct combi_lookup
   u32   round;
   char  mask[0x400];
 
-  u64   word;       // the -s value, counted from the start of the queue
+  u128  word;       // the -s value, counted from the start of the queue
   u64   amp;        // where in that base word's cell the candidate sits
   u64   amp_cnt;    // how wide the cell is
 
@@ -3597,7 +3681,7 @@ typedef struct mask_ctx
   // before round i, entry masks_cnt is the whole queue. Read by the status thread, so it is
   // built once and never written again.
 
-  u64   *masks_prefix_cnt;
+  u128  *masks_prefix_cnt;
 
   char  *mask;
 
@@ -3670,7 +3754,8 @@ typedef struct generic_global_ctx
   // by whatever the mean lost to rounding, and the total a run is measured against is short with it.
   // A feed that already knows the exact number says it here and the multiplication is not used.
   //
-  // Zero means the feed did not say, and the mean stands.
+  // Zero means the feed did not say, and the mean stands. A total that can pass 2^64 goes in
+  // dev_total_u128 at the end of this struct instead.
 
   u64 dev_total;
 
@@ -3746,13 +3831,19 @@ typedef struct generic_global_ctx
 
   void  *gbldata; // super generic
 
+  // dev_total at full width. Zero means the feed did not say, and where a feed sets both, this one is
+  // read. It comes after every field a feed was built against before it existed, so their offsets
+  // stay where those feeds expect them.
+
+  u128 dev_total_u128;
+
 } generic_global_ctx_t;
 
 typedef struct generic_thread_ctx
 {
-  // A failure inside thread_init (), thread_term (), thread_next () or thread_seek () is reported
-  // here and not in the global context, because those four run on one device thread each and a
-  // shared flag would let one device's failure speak for all of them.
+  // A failure inside thread_init (), thread_term (), thread_next () or the seek, thread_seek () or
+  // thread_seek_u128 (), is reported here and not in the global context, because those four run on
+  // one device thread each and a shared flag would let one device's failure speak for all of them.
 
   bool   error;
   char   error_msg[256];
@@ -3780,6 +3871,10 @@ typedef int  (*GENERIC_THREAD_NEXT_DEV) (generic_global_ctx_t *, generic_thread_
 typedef int  (*GENERIC_GLOBAL_EXPLAIN)  (generic_global_ctx_t *, const pcfg_cell_t *, const u32 *, const u8 *, const int, const u32, const u64, char *, const int);
 typedef bool (*GENERIC_THREAD_SEEK)     (generic_global_ctx_t *, generic_thread_ctx_t *, const u64);
 typedef bool (*GENERIC_GLOBAL_DEV_INIT) (generic_global_ctx_t *, const u32 **, u64 *, u32 *, u32 *, u32 *, u32 *, u32 *, u32 *, pcfg_cell_t *);
+
+typedef u128 (*GENERIC_GLOBAL_KEYSPACE_U128) (generic_global_ctx_t *, generic_thread_ctx_t **, void *);
+typedef bool (*GENERIC_THREAD_SEEK_U128)     (generic_global_ctx_t *, generic_thread_ctx_t *, const u128);
+typedef int  (*GENERIC_GLOBAL_EXPLAIN_U128)  (generic_global_ctx_t *, const pcfg_cell_t *, const u32 *, const u8 *, const int, const u32, const u128, char *, const int);
 
 // What a live feed instance is for. A run can hold one of each, and that is what lets -a 1 be
 // expressed without a second reader: its amplifier is a wordlist too, so the number of amplifier
@@ -3852,6 +3947,15 @@ typedef struct generic_ctx
   GENERIC_THREAD_NEXT_DEV  thread_next_dev;
   GENERIC_GLOBAL_EXPLAIN   global_explain;
 
+  // The 128-bit forms of global_keyspace (), thread_seek () and global_explain (). A feed that exports
+  // the first two has u128_enable set, is driven through these instead, and has no u64 forms loaded.
+
+  GENERIC_GLOBAL_KEYSPACE_U128 global_keyspace_u128;
+  GENERIC_THREAD_SEEK_U128     thread_seek_u128;
+  GENERIC_GLOBAL_EXPLAIN_U128  global_explain_u128;
+
+  bool u128_enable;
+
   bool autohex_enable;
   bool iconv_enable;
   bool rules_enable;
@@ -3900,8 +4004,10 @@ typedef struct generic_ctx
   // What the feed said its keyspace is, in base words, before any amplifier is applied. It cannot be
   // finished here: -a 6 and -a 7 amplify with the mask, and the mask is only sized once per round, in
   // mask_ctx_update_loop. So the number is kept and straight_ctx_update_loop finishes it.
+  //
+  // It is held at full width whichever form the feed counted in, see generic_global_keyspace ().
 
-  u64 keyspace;
+  u128 keyspace;
 
 } generic_ctx_t;
 
@@ -4062,32 +4168,32 @@ typedef struct hashcat_status
   double      salts_percent;
   int         progress_mode;
   double      progress_finished_percent;
-  u64         progress_cur;
-  u64         progress_cur_relative_skip;
-  u64         progress_done;
-  u64         progress_end;
-  u64         progress_end_relative_skip;
-  u64         progress_ignore;
-  u64         progress_rejected;
+  u128        progress_cur;
+  u128        progress_cur_relative_skip;
+  u128        progress_done;
+  u128        progress_end;
+  u128        progress_end_relative_skip;
+  u128        progress_ignore;
+  u128        progress_rejected;
   double      progress_rejected_percent;
   #ifdef WITH_BRAIN
-  u64         brain_rejects_attacks;
+  u128        brain_rejects_attacks;
   u64         brain_rejects_hashes;
   #endif
-  u64         progress_restored;
-  u64         progress_skip;
+  u128        progress_restored;
+  u128        progress_skip;
 
   // The queue-wide counterparts of progress_end, progress_cur and the two time_estimated strings.
   // queue_keyspace is zero when the run has no mask queue whose keyspace is known, and the other
   // three then carry nothing either.
 
-  u64         queue_keyspace;
-  u64         queue_progress_done;
+  u128        queue_keyspace;
+  u128        queue_progress_done;
   char       *queue_time_estimated_absolute;
   char       *queue_time_estimated_relative;
 
-  u64         restore_point;
-  u64         restore_total;
+  u128        restore_point;
+  u128        restore_total;
   double      restore_percent;
   int         cpt_cur_min;
   int         cpt_cur_hour;
@@ -4111,6 +4217,16 @@ typedef struct hashcat_status
   char   *speed_sec_all;
 
 } hashcat_status_t;
+
+// A keyspace count the core holds but cannot state: a feed whose word count is unknown, or a product
+// or sum that did not fit the type. It is the largest value of the type. A product or sum that could
+// reach this value is checked. One that overflows is set to KEYSPACE_UNSIZED rather than wrapped. A
+// count that lands on exactly this value reads as unsized, which needs a contrived queue of masks.
+//
+// A feed reports the same state as GENERIC_KEYSPACE_UNKNOWN, or as GENERIC_KEYSPACE_UNKNOWN_U128 when it
+// counts in 128 bits. The core turns either into this one where it reads the feed.
+
+#define KEYSPACE_UNSIZED ((u128) ~((u128) 0))
 
 typedef struct status_ctx
 {
@@ -4168,11 +4284,11 @@ typedef struct status_ctx
    * workload
    */
 
-  u64  words_off;               // used by dispatcher; get_work () as offset; attention: needs to be redone on in restore case!
-  u64  words_cur;               // used by dispatcher; the different to words_cur_next is that this counter guarantees that the work from zero to this counter has been actually computed
+  u128 words_off;               // used by dispatcher; get_work () as offset; attention: needs to be redone on in restore case!
+  u128 words_cur;               // used by dispatcher; the different to words_cur_next is that this counter guarantees that the work from zero to this counter has been actually computed
                                 // has been finished actually, can be used for restore point therefore
-  u64  words_base;              // the unamplified max keyspace
-  u64  words_cnt;               // the amplified max keyspace
+  u128 words_base;              // the unamplified max keyspace
+  u128 words_cnt;               // the amplified max keyspace
 
   // What the producer of this round knows its unamplified keyspace to be.
   //
@@ -4182,7 +4298,7 @@ typedef struct status_ctx
   // division recovers the wrong number from a saturated product. A producer that knows the base says
   // so here and the division is not consulted. Zero means it did not, which is every mask.
 
-  u64  words_base_given;
+  u128 words_base_given;
 
   // -i and a mask file are a queue of rounds, and the queue is one keyspace. --skip and --limit
   // address the queue, so each round takes its own share of that window rather than applying the
@@ -4190,28 +4306,28 @@ typedef struct status_ctx
   // into the queue the rounds before this one already got, unamplified and amplified, and --keyspace
   // is what they are for once the queue has been walked.
 
-  u64  words_walk_base;
-  u64  words_walk_cnt;
+  u128 words_walk_base;
+  u128 words_walk_cnt;
 
   // The keyspace of the whole queue of masks, summed by mask_ctx_queue_keyspace () before the first
   // round runs, so that the status screen can measure the run against the whole mask file rather
   // than against the round in progress. Zero means there is no queue of masks or it could not be
-  // sized, and (u64) -1 that the sum did not fit.
+  // sized, and KEYSPACE_UNSIZED that the sum did not fit.
 
-  u64  words_queue_cnt;
+  u128 words_queue_cnt;
 
   // This round's share of the window, both positions in the round's own keyspace. words_limit is
   // zero when the round runs to its own end, which is what --limit not being given means.
 
-  u64  words_skip;
-  u64  words_limit;
+  u128 words_skip;
+  u128 words_limit;
 
   // Where a seek is taking the run, once the devices it stopped have wound down. Only the position is
   // kept, because everything the run counts is a function of it and seek_apply () writes the rest
   // from the position alone.
 
   bool seek_pending;
-  u64  seek_target;
+  u128 seek_target;
 
   // How far the next press of a seek key moves, which way the run of presses is going, and when the
   // last one arrived. A held key repeats and each repeat moves further than the last, so one press
@@ -4226,9 +4342,9 @@ typedef struct status_ctx
    * progress
    */
 
-  u64 *words_progress_done;     // progress number of words done     per salt
-  u64 *words_progress_rejected; // progress number of words rejected per salt
-  u64 *words_progress_restored; // progress number of words restored per salt
+  u128 *words_progress_done;     // progress number of words done     per salt
+  u128 *words_progress_rejected; // progress number of words rejected per salt
+  u128 *words_progress_restored; // progress number of words restored per salt
 
   #ifdef WITH_BRAIN
   // words_progress_rejected mixes every reason a candidate was dropped, so it cannot answer "how much
@@ -4236,8 +4352,8 @@ typedef struct status_ctx
   // are independent: ATTACKS skips a keyspace position another client already reserved, HASHES drops
   // a candidate the brain has seen before whatever position it came from.
 
-  u64 brain_rejects_attacks;
-  u64 brain_rejects_hashes;
+  u128 brain_rejects_attacks;
+  u64  brain_rejects_hashes;
   #endif
 
   int bypass_digests_done_new;  // --bypass-threshold cracked counter
@@ -4260,7 +4376,6 @@ typedef struct status_ctx
   time_t timer_bypass_cur;
 
   bool bypass_eta_checked;      // --bypass-eta decides once per queue item
-  u64  bypass_eta_words_from;   // words_cur when the queue item started
 
   hc_timer_t timer_running;     // timer on current dict
   hc_timer_t timer_paused;      // timer on current dict
@@ -4684,6 +4799,7 @@ typedef struct module_ctx
   u64         (*module_extra_tmp_size)          (const hashconfig_t *, const user_options_t *, const user_options_extra_t *, const hashes_t *);
   char       *(*module_jit_build_options)       (const hashconfig_t *, const user_options_t *, const user_options_extra_t *, const hashes_t *, const hc_device_param_t *);
   bool        (*module_jit_cache_disable)       (const hashconfig_t *, const user_options_t *, const user_options_extra_t *, const hashes_t *, const hc_device_param_t *);
+  bool        (*module_salt_sweep)              (const hashconfig_t *, const user_options_t *, const user_options_extra_t *, const hashes_t *, const hc_device_param_t *);
   u32         (*module_deep_comp_kernel)        (const hashes_t *, const u32, const u32);
   int         (*module_hash_init_selftest)      (const hashconfig_t *, hash_t *);
 

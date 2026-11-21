@@ -72,6 +72,7 @@ int user_options_init (hashcat_ctx_t *hashcat_ctx)
   user_options->bitmap_max                 = BITMAP_MAX;
   user_options->bitmap_min                 = BITMAP_MIN;
   user_options->cache_path                 = NULL;
+  user_options->profile_dir                = NULL;
   #ifdef WITH_BRAIN
   user_options->brain_client               = BRAIN_CLIENT;
   user_options->brain_feed                 = false;
@@ -180,7 +181,6 @@ int user_options_init (hashcat_ctx_t *hashcat_ctx)
   user_options->skip                       = SKIP;
   user_options->slow_candidates            = SLOW_CANDIDATES;
   user_options->speed_only                 = SPEED_ONLY;
-  user_options->spin_damp                  = SPIN_DAMP;
   user_options->status                     = STATUS;
   user_options->status_json                = STATUS_JSON;
   user_options->pipeline_stats             = PIPELINE_STATS;
@@ -222,9 +222,10 @@ void user_options_destroy (hashcat_ctx_t *hashcat_ctx)
 }
 
 // The module options are collected before the command line is parsed, because the parse needs them.
-// Two core options control how they are collected: --cache-path names where their cache file is, and
-// --module-cache-rebuild has it built again. Those two are read here first, the way getopt reads a
-// long option, an unambiguous start of its name included, and the parse reads them again later.
+// Three core options control how they are collected: --cache-path and --profile-dir decide where their
+// cache file is, and --module-cache-rebuild has it built again. Those three are read here first, the
+// way getopt reads a long option, an unambiguous start of its name included, and the parse reads them
+// again later.
 
 static const char *const PRESCAN_CORE_NAMES[] =
 {
@@ -281,7 +282,10 @@ void user_options_prescan (hashcat_ctx_t *hashcat_ctx, int argc, char **argv)
       continue;
     }
 
-    if (prescan_match (arg, typed_len, "cache-path") == false) continue;
+    const bool is_cache   = prescan_match (arg, typed_len, "cache-path");
+    const bool is_profile = prescan_match (arg, typed_len, "profile-dir");
+
+    if ((is_cache == false) && (is_profile == false)) continue;
 
     char *value = NULL;
 
@@ -298,7 +302,10 @@ void user_options_prescan (hashcat_ctx_t *hashcat_ctx, int argc, char **argv)
 
     // an empty one is refused by the parse, and until then it names no directory
 
-    if ((value != NULL) && (value[0] != 0)) user_options->cache_path = value;
+    if ((value == NULL) || (value[0] == 0)) continue;
+
+    if (is_cache   == true) user_options->cache_path  = value;
+    if (is_profile == true) user_options->profile_dir = value;
   }
 }
 
@@ -374,9 +381,9 @@ int user_options_getopt (hashcat_ctx_t *hashcat_ctx, int argc, char **argv)
       case IDX_HASH_INFO:                 user_options->hash_info++;                                                 break;
       case IDX_FORCE:                     user_options->force                     = true;                            break;
       case IDX_SELF_TEST_DISABLE:         user_options->self_test                 = false;                           break;
-      case IDX_SKIP:                      user_options->skip                      = hc_strtoull (optarg, NULL, 10);
+      case IDX_SKIP:                      hc_strtou128 (optarg, &user_options->skip);
                                           user_options->skip_chgd                 = true;                            break;
-      case IDX_LIMIT:                     user_options->limit                     = hc_strtoull (optarg, NULL, 10);
+      case IDX_LIMIT:                     hc_strtou128 (optarg, &user_options->limit);
                                           user_options->limit_chgd                = true;                            break;
       case IDX_KEEP_GUESSING:             user_options->keep_guessing             = true;                            break;
       case IDX_KEYSPACE:                  user_options->keyspace                  = true;                            break;
@@ -402,6 +409,7 @@ int user_options_getopt (hashcat_ctx_t *hashcat_ctx, int argc, char **argv)
       case IDX_RESTORE_DISABLE:           user_options->restore_enable            = false;                           break;
       case IDX_RESTORE_FILE_PATH:         user_options->restore_file_path         = optarg;                          break;
       case IDX_CACHE_PATH:                user_options->cache_path                = optarg;                          break;
+      case IDX_PROFILE_DIR:               user_options->profile_dir               = optarg;                          break;
       case IDX_STATUS:                    user_options->status                    = true;                            break;
       case IDX_STATUS_JSON:               user_options->status_json               = true;                            break;
       case IDX_PIPELINE_STATS:            user_options->pipeline_stats            = true;                            break;
@@ -489,8 +497,6 @@ int user_options_getopt (hashcat_ctx_t *hashcat_ctx, int argc, char **argv)
                                           user_options->kernel_loops_chgd         = true;                            break;
       case IDX_KERNEL_THREADS:            user_options->kernel_threads            = hc_strtoul (optarg, NULL, 10);
                                           user_options->kernel_threads_chgd       = true;                            break;
-      case IDX_SPIN_DAMP:                 user_options->spin_damp                 = hc_strtoul (optarg, NULL, 10);
-                                          user_options->spin_damp_chgd            = true;                            break;
       case IDX_HWMON_DISABLE:             user_options->hwmon                     = false;                           break;
       case IDX_HWMON_TEMP_ABORT:          user_options->hwmon_temp_abort          = hc_strtoul (optarg, NULL, 10);   break;
       case IDX_LOGFILE_DISABLE:           user_options->logfile                   = false;                           break;
@@ -1254,7 +1260,6 @@ void user_options_preprocess (hashcat_ctx_t *hashcat_ctx)
     user_options->hwmon               = false;
     user_options->left                = false;
     user_options->logfile             = false;
-    user_options->spin_damp           = 0;
     user_options->outfile_check_timer = 0;
     user_options->potfile             = false;
     user_options->restore_enable      = false;
@@ -1266,15 +1271,10 @@ void user_options_preprocess (hashcat_ctx_t *hashcat_ctx)
     user_options->status_timer        = 0;
     user_options->bitmap_min          = 1;
     user_options->bitmap_max          = 1;
-
-    // the slow candidate path prints nothing usable for a mask here, and --stdout ignores -S
-
-    user_options->slow_candidates     = false;
   }
 
-  // After --stdout has dropped -S and before the actions below turn the client off: --keyspace and
-  // --speed-only measure the path the candidate feature puts a cracking run on, so they keep that
-  // path, while -b drops it again.
+  // Before the actions below turn the client off: --keyspace and --speed-only measure the path the
+  // candidate feature puts a cracking run on, so they keep that path, while -b drops it again.
 
   #ifdef WITH_BRAIN
   if (user_options->brain_client == true)
@@ -1306,7 +1306,6 @@ void user_options_preprocess (hashcat_ctx_t *hashcat_ctx)
     //user_options->hwmon               = false;
     user_options->left                = false;
     user_options->logfile             = false;
-    user_options->spin_damp           = 0;
     user_options->outfile_check_timer = 0;
     user_options->potfile             = false;
     user_options->restore_enable      = false;
@@ -1343,7 +1342,6 @@ void user_options_preprocess (hashcat_ctx_t *hashcat_ctx)
     user_options->increment           = INCREMENT_NONE;
     user_options->left                = false;
     user_options->logfile             = false;
-    user_options->spin_damp           = 0;
     user_options->potfile             = false;
     user_options->progress_only       = false;
     user_options->restore_enable      = false;
@@ -1498,9 +1496,20 @@ void user_options_preprocess (hashcat_ctx_t *hashcat_ctx)
     user_options->restore_position = false;
   }
 
+  // From here on --limit is where the window ends. An end past the type's range lies past every
+  // keyspace, and so does the largest value. The sum therefore stops there rather than wrapping to a
+  // position near the start.
+
   if (user_options->skip != 0 && user_options->limit != 0)
   {
-    user_options->limit += user_options->skip;
+    if (overflow_check_u128_add (user_options->limit, user_options->skip) == true)
+    {
+      user_options->limit = U128_MAX;
+    }
+    else
+    {
+      user_options->limit += user_options->skip;
+    }
   }
 
   if (user_options->markov_threshold == 0)
@@ -1870,8 +1879,16 @@ static u32 user_options_extra_base_source (hashcat_ctx_t *hashcat_ctx)
   // base from the mask. Which kernel it will be is decided inside hashconfig_init, which has not run,
   // so the answer given here is the pure one and user_options_extra_init_late () upgrades it once the
   // kernel type is known.
+  //
+  // --slow-candidates builds every candidate on the host, which can put the mask in front. It has no
+  // producer for a mask base, so there the dictionary is the base whatever the kernel.
 
-  if (user_options->attack_mode_typed == ATTACK_MODE_HYBRID2) return BASE_SOURCE_MASK;
+  if (user_options->attack_mode_typed == ATTACK_MODE_HYBRID2)
+  {
+    if (user_options->slow_candidates == true) return BASE_SOURCE_FEED;
+
+    return BASE_SOURCE_MASK;
+  }
 
   return BASE_SOURCE_FEED;
 }
@@ -3444,6 +3461,7 @@ void user_options_logger (hashcat_ctx_t *hashcat_ctx)
   logfile_top_string (user_options->bridge_parameter4);
   logfile_top_string (user_options->hash_recipe);
   logfile_top_string (user_options->cache_path);
+  logfile_top_string (user_options->profile_dir);
   logfile_top_string (user_options->cpu_affinity);
   logfile_top_string (user_options->custom_charset_1);
   logfile_top_string (user_options->custom_charset_2);
@@ -3473,8 +3491,10 @@ void user_options_logger (hashcat_ctx_t *hashcat_ctx)
   #ifdef WITH_BRAIN
   logfile_top_string (user_options->brain_host);
   #endif
-  logfile_top_uint64 (user_options->limit);
-  logfile_top_uint64 (user_options->skip);
+
+  logfile_top_uint128 (user_options->limit);
+  logfile_top_uint128 (user_options->skip);
+
   logfile_top_uint64 (user_options->stdin_count);
   logfile_top_uint   (user_options->attack_mode);
   logfile_top_uint   (user_options->backend_devices_virtmulti);
@@ -3548,7 +3568,6 @@ void user_options_logger (hashcat_ctx_t *hashcat_ctx)
   logfile_top_uint   (user_options->slow_candidates);
   logfile_top_uint   (user_options->show);
   logfile_top_uint   (user_options->speed_only);
-  logfile_top_uint   (user_options->spin_damp);
   logfile_top_uint   (user_options->status);
   logfile_top_uint   (user_options->json);
   logfile_top_uint   (user_options->status_json);

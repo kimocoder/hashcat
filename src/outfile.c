@@ -21,6 +21,7 @@
 #include "thread.h"
 #include "outfile.h"
 #include "json.h"
+#include "feed_ctx.h"
 
 #include <stdarg.h>
 
@@ -144,6 +145,34 @@ static int plain_pw (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param
   const int rc = gidd_to_pw_t (hashcat_ctx, device_param, gidvid, pw);
 
   return rc;
+}
+
+// The longest plain build_plain () reports in this run. --encrypt-with-pubkey checks its key against
+// it, so the two cannot drift apart.
+//
+// A combinator candidate is a base word plus an amplifier, and pw_max bounds the base word alone. The
+// amplifier is held to PW_MAX, so an optimized kernel's candidate is at most the sum, and a cap at
+// pw_max itself, 55 there, reported a truncated password that does not hash to the digest beside it.
+// A pure kernel's plain stops at twice pw_max. PW_MAX * 2 is what the callers are sized for. With
+// --slow-candidates the host joins the two words into a pw_t, which holds PW_MAX.
+
+u32 build_plain_max (const hashcat_ctx_t *hashcat_ctx)
+{
+  const hashconfig_t         *hashconfig         = hashcat_ctx->hashconfig;
+  const user_options_t       *user_options       = hashcat_ctx->user_options;
+  const user_options_extra_t *user_options_extra = hashcat_ctx->user_options_extra;
+
+  const u32 pw_max = hashconfig->pw_max;
+
+  if (user_options_extra->attack_kern != ATTACK_KERN_COMBI) return pw_max;
+
+  const u32 combi_max = (hashconfig->opti_type & OPTI_TYPE_OPTIMIZED_KERNEL) ? (pw_max + PW_MAX) : (pw_max * 2);
+
+  const u32 room_max = (user_options->slow_candidates == true) ? PW_MAX : PW_MAX * 2;
+
+  const u32 plain_max = MIN (combi_max, room_max);
+
+  return plain_max;
 }
 
 int build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, plain_t *plain, u32 *plain_buf, int *out_len)
@@ -321,8 +350,8 @@ int build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, pl
     }
     else if (user_options_extra->attack_kern == ATTACK_KERN_BF)
     {
-      u64 l_off = device_param->kernel_params_mp_l_buf64[3] + gidvid;
-      u64 r_off = device_param->kernel_params_mp_r_buf64[3] + il_pos;
+      const u128 l_off = u128_join (device_param->kernel_params_mp_l_buf64[10], device_param->kernel_params_mp_l_buf64[3]) + gidvid;
+      const u64  r_off = device_param->kernel_params_mp_r_buf64[3] + il_pos;
 
       u32 l_start = device_param->kernel_params_mp_l_buf32[5];
       u32 r_start = device_param->kernel_params_mp_r_buf32[5];
@@ -330,7 +359,7 @@ int build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, pl
       u32 l_stop = device_param->kernel_params_mp_l_buf32[4];
       u32 r_stop = device_param->kernel_params_mp_r_buf32[4];
 
-      sp_exec (l_off, (char *) plain_ptr + l_start, mask_ctx->root_css_buf, mask_ctx->markov_css_buf, l_start, l_start + l_stop);
+      sp_exec_u128 (l_off, (char *) plain_ptr + l_start, mask_ctx->root_css_buf, mask_ctx->markov_css_buf, l_start, l_start + l_stop);
       sp_exec_r (r_off, (char *) plain_ptr + r_start, mask_ctx->root_css_buf, mask_ctx->markov_css_buf, r_start, r_start + r_stop);
 
       plain_len = (int) mask_ctx->css_cnt;
@@ -341,12 +370,12 @@ int build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, pl
       // the way -a 7 puts it together under a pure kernel: the mask from the outer loop position, then
       // the amplifier word behind it.
 
-      const u64 off = device_param->kernel_params_mp_buf64[3] + gidvid;
+      const u128 off = u128_join (device_param->kernel_params_mp_buf64[9], device_param->kernel_params_mp_buf64[3]) + gidvid;
 
       const u32 start = 0;
       const u32 stop  = device_param->kernel_params_mp_buf32[4];
 
-      sp_exec (off, (char *) plain_ptr, mask_ctx->root_css_buf, mask_ctx->markov_css_buf, start, start + stop);
+      sp_exec_u128 (off, (char *) plain_ptr, mask_ctx->root_css_buf, mask_ctx->markov_css_buf, start, start + stop);
 
       plain_len = (int) stop;
 
@@ -372,7 +401,7 @@ int build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, pl
 
       if (device_param->combs_on_host == true)
       {
-        plain_len = (int) hybrid_amp_rebuild (hashcat_ctx, device_param, il_pos, plain_ptr, (const u8 *) pw.i, pw.pw_len);
+        plain_len = (int) hybrid_amp_rebuild (hashcat_ctx, device_param, il_pos, plain_ptr, PW_MAX * 2, (const u8 *) pw.i, pw.pw_len);
       }
       else
       {
@@ -382,7 +411,7 @@ int build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, pl
 
         hybrid_amp_mask (hashcat_ctx, off, mask_buf);
 
-        plain_len = (int) hybrid_assemble (hashcat_ctx, plain_ptr, mask_buf, (const u8 *) pw.i, pw.pw_len, NULL, 0);
+        plain_len = (int) hybrid_assemble_max (hashcat_ctx, plain_ptr, PW_MAX * 2, mask_buf, (const u8 *) pw.i, pw.pw_len, NULL, 0);
       }
     }
     if (user_options->attack_mode == ATTACK_MODE_BF)
@@ -419,28 +448,9 @@ int build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, pl
     }
   }
 
-  int pw_max = (const int) hashconfig->pw_max;
+  const int plain_max = (int) build_plain_max (hashcat_ctx);
 
-  // A combinator candidate is a base word plus an amplifier, and pw_max bounds the base word alone.
-  // The cap at 55 reported a truncated password, which does not hash to the digest beside it.
-  // PW_MAX * 2 is what the callers are sized for.
-
-  if (plain_len > pw_max)
-  {
-    if (user_options_extra->attack_kern == ATTACK_KERN_COMBI)
-    {
-      if (hashconfig->opti_type & OPTI_TYPE_OPTIMIZED_KERNEL)
-      {
-        pw_max = PW_MAX * 2;
-      }
-      else
-      {
-        pw_max = MIN ((pw_max * 2), PW_MAX * 2);
-      }
-    }
-  }
-
-  if (plain_len > pw_max) plain_len = MIN (plain_len, pw_max);
+  plain_len = MIN (plain_len, plain_max);
 
   plain_ptr[plain_len] = 0;
 
@@ -449,7 +459,7 @@ int build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, pl
   return 0;
 }
 
-int build_crackpos (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, plain_t *plain, u64 *out_pos)
+int build_crackpos (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, plain_t *plain, u128 *out_pos)
 {
   const combinator_ctx_t      *combinator_ctx     = hashcat_ctx->combinator_ctx;
   const mask_ctx_t            *mask_ctx           = hashcat_ctx->mask_ctx;
@@ -461,10 +471,10 @@ int build_crackpos (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param,
   // so this is the position the work item's word came in at, in the batch being launched and not the
   // one the producer has moved on to filling.
 
-  const u64 word_pos = gidvid_to_word_pos (device_param, plain->gidvid);
-  const u32 il_pos   = plain->il_pos;
+  const u128 word_pos = gidvid_to_word_pos (device_param, plain->gidvid);
+  const u32  il_pos   = plain->il_pos;
 
-  u64 crackpos = 0;
+  u128 crackpos = 0;
 
   if (user_options->slow_candidates == true)
   {
@@ -492,6 +502,19 @@ int build_crackpos (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param,
       crackpos *= mask_ctx->bfs_cnt;
       crackpos += device_param->innerloop_pos + il_pos;
     }
+    else
+    {
+      // The three above amplify inside the launch, so a position there is the base word's times the
+      // width of that amplifier. A feed on its device engine has no width to multiply by, and counts
+      // its keyspace in base words, so the work item's own position is the position. The feed's host
+      // engine does not arrive here: it keeps ATTACK_KERN_STRAIGHT and the straight branch above
+      // already gives it the right position, with the rule count as the width.
+      //
+      // This is the last branch rather than a fourth test so that a kern with no amplifier reports
+      // its position rather than 0.
+
+      crackpos += word_pos;
+    }
   }
 
   *out_pos = crackpos;
@@ -513,7 +536,6 @@ static int debug_rule_from_feed (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *
   const user_options_extra_t *user_options_extra = hashcat_ctx->user_options_extra;
 
   if (generic_ctx->explain_enable == false) return 0;
-  if (generic_ctx->global_explain == NULL) return 0;
 
   const bool amp = (user_options_extra->attack_kern == ATTACK_KERN_PCFG);
 
@@ -526,11 +548,12 @@ static int debug_rule_from_feed (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *
   const u32 *pool = (amp == true) ? generic_ctx->dev_pool : NULL;
 
   // Where this candidate's base word sat in the feed's own keyspace, which is the same position
-  // build_crackpos () starts from before it multiplies by whatever amplifies.
+  // build_crackpos () starts from before it multiplies by whatever amplifies. Only a feed reaches
+  // here.
 
-  const u64 pos = gidvid_to_word_pos (device_param, gidvid);
+  const u128 pos = gidvid_to_word_pos (device_param, gidvid);
 
-  const int len = generic_ctx->global_explain (&((generic_ctx_t *) generic_ctx)->global_ctx, cell, pool, base, base_len, (amp == true) ? il_pos : 0, pos, (char *) debug_rule_buf, RP_PASSWORD_SIZE - 1);
+  const int len = generic_global_explain (hashcat_ctx, GENERIC_ROLE_BASE, cell, pool, base, base_len, (amp == true) ? il_pos : 0, pos, (char *) debug_rule_buf, RP_PASSWORD_SIZE - 1);
 
   if (len <= 0) return 0;
 
@@ -838,7 +861,7 @@ static int outfile_append_fmt (char *buf, const int len, const char *fmt, ...)
   return len + n;
 }
 
-int outfile_write (hashcat_ctx_t *hashcat_ctx, const char *out_buf, const int out_len, const unsigned char *plain_ptr, const u32 plain_len, const u64 crackpos, const unsigned char *username, const u32 user_len, const bool print_eol, char *tmp_buf)
+int outfile_write (hashcat_ctx_t *hashcat_ctx, const char *out_buf, const int out_len, const unsigned char *plain_ptr, const u32 plain_len, const u128 crackpos, const unsigned char *username, const u32 user_len, const bool print_eol, char *tmp_buf)
 {
   const hashconfig_t   *hashconfig   = hashcat_ctx->hashconfig;
   const hashes_t       *hashes       = hashcat_ctx->hashes;
@@ -1000,7 +1023,9 @@ int outfile_write (hashcat_ctx_t *hashcat_ctx, const char *out_buf, const int ou
 
     if (outfile_format & OUTFILE_FMT_CRACKPOS)
     {
-      tmp_len = outfile_append_fmt (tmp_buf, tmp_len, "%" PRIu64, crackpos);
+      char crackpos_buf[U128_DEC_SIZE];
+
+      tmp_len = outfile_append_fmt (tmp_buf, tmp_len, "%s", u128_to_dec (crackpos_buf, crackpos));
     }
   }
 

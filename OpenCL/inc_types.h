@@ -25,6 +25,7 @@
 #define GID_CNT             kernel_param->gid_max
 #define PCFG_LANE_STRIDE    kernel_param->pcfg_lane_stride
 #define MODULE_TUNE         kernel_param->module_tune
+#define SALTS_CNT           kernel_param->salts_cnt
 #else
 #define BITMAP_MASK         kernel_param->bitmap_mask
 #define PCFG_POOL_AT1       kernel_param->pcfg_pool_at1
@@ -44,6 +45,7 @@
 #define GID_CNT             kernel_param->gid_max
 #define PCFG_LANE_STRIDE    kernel_param->pcfg_lane_stride
 #define MODULE_TUNE         kernel_param->module_tune
+#define SALTS_CNT           kernel_param->salts_cnt
 #endif
 
 #ifdef IS_CUDA
@@ -85,6 +87,36 @@ typedef uint8_t  u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
+#endif
+
+// A keyspace position or count. No 128-bit integer type builds on every backend, so the kernels keep
+// it as two u64 limbs. Where a backend has one, dividing it by a charset size compiles into a full
+// 128-by-128 division, which is slower than the limbs.
+//
+// The host uses the compiler's own type. GCC and Clang have it on every 64-bit target, and requiring
+// it there keeps every program that includes these headers on one layout of the structs that hold a
+// u128. A 32-bit host keeps u64, and with it the 64-bit limits.
+
+#ifdef KERNEL_STATIC
+
+typedef struct u128
+{
+  u64 lo;
+  u64 hi;
+
+} u128_t;
+
+#else
+
+#if defined (__SIZEOF_INT128__) && (__SIZEOF_POINTER__ == 8)
+#define U128_WIDE
+__extension__ typedef unsigned __int128 u128;
+#elif (__SIZEOF_POINTER__ == 8)
+#error "A 64-bit host needs a compiler with unsigned __int128."
+#else
+typedef uint64_t u128;
+#endif
+
 #endif
 
 //testwise disabled
@@ -2142,6 +2174,12 @@ typedef struct kernel_param
   u32 run_len;              // 44
   u32 run_pos;              // 45
   u32 run_mask;             // 46
+
+  // The salts a launch walks: every salt of the list, or the one salt of the self-test. A sweep
+  // launch (module_salt_sweep ()) instead counts the live salts, whose positions the sweep buffer
+  // lists, and sets digests_cnt to every digest of the list and digests_offset_host to 0.
+
+  u32 salts_cnt;            // 47
 
 } kernel_param_t;
 

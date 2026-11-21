@@ -607,7 +607,7 @@ int module_options_init (hashcat_ctx_t *hashcat_ctx, const char *install_folder,
   char *shared_dir = NULL;
   char *cache_dir  = NULL;
 
-  if (folder_early_dirs (&hashcat_ctx->folder_config->request, install_folder, shared_folder, user_options->cache_path, &shared_dir, &cache_dir) == -1) return 0;
+  if (folder_early_dirs (&hashcat_ctx->folder_config->request, install_folder, shared_folder, user_options->cache_path, user_options->profile_dir, &shared_dir, &cache_dir) == -1) return 0;
 
   folder_config_t folder_config;
 
@@ -707,8 +707,13 @@ int module_options_init (hashcat_ctx_t *hashcat_ctx, const char *install_folder,
 
     // A module that could not be loaded leaves no file, so the next start tries every module again
     // rather than trust a list that was incomplete.
+    //
+    // A --profile-dir that is not there gets the run refused, and on Windows the cache is below it, so
+    // making the cache directory then would turn the typo into a directory.
 
-    if (writer != NULL) module_options->cache_written = module_cache_write_end (writer, cache_dir, (user_options->cache_path == NULL), (module_options->broken_cnt == 0));
+    const bool make_dir = (user_options->cache_path == NULL) && ((user_options->profile_dir == NULL) || (hc_path_is_directory (user_options->profile_dir) == true));
+
+    if (writer != NULL) module_options->cache_written = module_cache_write_end (writer, cache_dir, make_dir, (module_options->broken_cnt == 0));
   }
 
   module_options->cache_read = replayed;
@@ -981,7 +986,9 @@ int module_options_check (hashcat_ctx_t *hashcat_ctx)
   return 0;
 }
 
-// The rows go into --help where the table in usage.c leaves room for them, in the same columns.
+// The rows go into --help where the table in usage.c leaves room for them, in the same columns. The
+// separators have to land at offsets 33, 40 and 91, which is what the widths below produce, so a
+// re-padding of that table has to change them here as well.
 
 void module_options_usage (const user_options_t *user_options)
 {
@@ -1001,11 +1008,11 @@ void module_options_usage (const user_options_t *user_options)
 
     if (help_example[0] == 0)
     {
-      printf ("     --%-25s| %-4s | %-52s |", row->name, help_type, help);
+      printf ("     --%-26s| %-4s | %-48s |", row->name, help_type, help);
     }
     else
     {
-      printf ("     --%-25s| %-4s | %-52s | %s", row->name, help_type, help, help_example);
+      printf ("     --%-26s| %-4s | %-48s | %s", row->name, help_type, help, help_example);
     }
 
     fwrite (EOL, strlen (EOL), 1, stdout);

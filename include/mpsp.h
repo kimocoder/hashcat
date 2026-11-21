@@ -28,7 +28,8 @@ bool  mask_starts_with_marker (const char *mask, const char marker);
 bool  mask_arg_ends_with_marker (const char *arg, const char marker);
 
 u32   hybrid_amp_mask (hashcat_ctx_t *hashcat_ctx, const u64 off, char *mask_buf);
-u32   hybrid_amp_rebuild (hashcat_ctx_t *hashcat_ctx, const hc_device_param_t *device_param, const u32 il_pos, u8 *out_buf, const u8 *base_buf, const u32 base_len);
+u32   hybrid_amp_rebuild (hashcat_ctx_t *hashcat_ctx, const hc_device_param_t *device_param, const u32 il_pos, u8 *out_buf, const u32 out_max, const u8 *base_buf, const u32 base_len);
+u32   hybrid_assemble_max (hashcat_ctx_t *hashcat_ctx, u8 *out_buf, const u32 out_max, const char *mask_buf, const u8 *base_buf, const u32 base_len, const u8 *word_buf, const u32 word_len);
 // Put one candidate together out of a mask and the words its markers name. Exported because
 // src/feeds/mask.c assembles the same candidate for a feed, and one implementation is what keeps a
 // feed and the attack it replaces from disagreeing about what a candidate looks like.
@@ -42,6 +43,11 @@ u32   mp_get_length (const char *mask, const u32 opts_type);
 // take rules without a second mask parser existing to disagree with this one.
 
 HC_PLUGIN_API void sp_exec (u64 ctx, char *pw_buf, cs_t *root_css_buf, cs_t *markov_css_buf, u32 start, u32 stop);
+
+// sp_exec () for a position that can pass 2^64. The two share one walk. Not for plugins: the feeds
+// that walk a mask, the mask feed and the hybrid feed, count its values in a u64.
+
+void sp_exec_u128 (const u128 ctx, char *pw_buf, const cs_t *root_css_buf, const cs_t *markov_css_buf, const u32 start, const u32 stop);
 
 // The right side of a split mask in the order the device walks it, for the core's own rebuild of a
 // candidate from its two offsets. Not for plugins, which see the mask whole.

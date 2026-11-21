@@ -45,7 +45,23 @@ static const char *const  ST_9999 = "Unknown! Bug!";
 static const char UNITS[7] = { ' ', 'k', 'M', 'G', 'T', 'P', 'E' };
 
 static const char *const  ETA_ABSOLUTE_MAX_EXCEEDED = "Next Big Bang"; // in honor of ighashgpu
-static const char *const  ETA_RELATIVE_MAX_EXCEEDED = "> 10 years";
+static const char *const  ETA_RELATIVE_MAX_EXCEEDED = "> 13.7 billion years";
+
+static const char *const  ETA_ABSOLUTE_CENTURY = "Next Century";
+static const char *const  ETA_RELATIVE_CENTURY = "> 100 years";
+
+// An estimate of a century or more is shown as a marker instead of a time, because no date that far
+// off tells anybody anything. Next Big Bang marks an estimate of the age of the universe or more. A
+// year here is 365.25 days. Both thresholds are doubles, because a 32-bit time_t holds neither.
+
+static const double ETA_SEC_CENTURY  = 3155760000.0;
+static const double ETA_SEC_BIG_BANG = 432339120000000000.0;
+
+// What a run reports for a keyspace too large to state, and for a time left at or past the age of
+// the universe. It is that threshold, so both formatters show the Next Big Bang markers. It is also
+// small enough that adding it to the current time cannot leave a 64-bit time_t.
+
+static const time_t ETA_SEC_UNMEASURABLE = 432339120000000000;
 
 static char *status_get_rules_file (const hashcat_ctx_t *hashcat_ctx)
 {
@@ -617,12 +633,12 @@ int status_get_guess_mode (const hashcat_ctx_t *hashcat_ctx)
 // several devices working separate ranges it trails behind, and it is what makes a resume safe rather
 // than what tells a user where the run is.
 
-static u64 status_get_words_cur_furthest (const hashcat_ctx_t *hashcat_ctx)
+static u128 status_get_words_cur_furthest (const hashcat_ctx_t *hashcat_ctx)
 {
   const backend_ctx_t *backend_ctx = hashcat_ctx->backend_ctx;
   const status_ctx_t  *status_ctx  = hashcat_ctx->status_ctx;
 
-  u64 words_cur = status_ctx->words_cur;
+  u128 words_cur = status_ctx->words_cur;
 
   for (int backend_devices_idx = 0; backend_devices_idx < backend_ctx->backend_devices_cnt; backend_devices_idx++)
   {
@@ -658,7 +674,7 @@ static char *status_get_guess_feed (const hashcat_ctx_t *hashcat_ctx)
 
   if (global_ctx->segments_cnt > 1)
   {
-    const u64 words_cur = status_get_words_cur_furthest (hashcat_ctx);
+    const u128 words_cur = status_get_base_word (hashcat_ctx, status_get_words_cur_furthest (hashcat_ctx));
 
     u64 segment_idx = 0;
 
@@ -1158,9 +1174,9 @@ char *status_get_guess_candidates_dev (const hashcat_ctx_t *hashcat_ctx, const i
   // build_plain returns up to PW_MAX * 2 bytes for a combinator candidate, and hexifying doubles it
   // again, so both buffers have to hold twice the longest candidate plus the terminator.
   //
-  // exec_hexify stops reading at PW_MAX, so a candidate longer than that is shown only as far as it
-  // got. The terminator goes where exec_hexify says it stopped rather than where the whole candidate
-  // would have ended, because the bytes in between were never written.
+  // exec_hexify stops reading at PW_MAX * 2, which build_plain never exceeds. The terminator goes where
+  // exec_hexify says it stopped rather than where the whole candidate would have ended, because the
+  // bytes in between would never have been written.
 
   u32 plain_buf1[((PW_MAX * 2 * 2) / 4) + 2] = { 0 };
   u32 plain_buf2[((PW_MAX * 2 * 2) / 4) + 2] = { 0 };
@@ -1330,6 +1346,34 @@ u64 status_get_amplifier_cnt (const hashcat_ctx_t *hashcat_ctx)
   return 1;
 }
 
+// A run position as a base word, for everything that compares it with the lines of the feed's
+// sources. --slow-candidates expands the amplifier on the host, so there a position counts the
+// candidates of every base word.
+
+u128 status_get_base_word (const hashcat_ctx_t *hashcat_ctx, const u128 pos)
+{
+  if (hashcat_ctx->user_options->slow_candidates == false) return pos;
+
+  const u64 amplifier = status_get_amplifier_cnt (hashcat_ctx);
+
+  const u128 word = (amplifier > 1) ? (pos / amplifier) : pos;
+
+  return word;
+}
+
+// and back, the run position of the first candidate of a base word
+
+u128 status_get_base_pos (const hashcat_ctx_t *hashcat_ctx, const u128 word)
+{
+  if (hashcat_ctx->user_options->slow_candidates == false) return word;
+
+  const u64 amplifier = status_get_amplifier_cnt (hashcat_ctx);
+
+  const u128 pos = (amplifier > 1) ? (word * amplifier) : word;
+
+  return pos;
+}
+
 u32 status_get_iteration_cnt (const hashcat_ctx_t *hashcat_ctx, const int salt_pos)
 {
   const hashes_t *hashes = hashcat_ctx->hashes;
@@ -1489,6 +1533,173 @@ bool status_get_stdin_count_exceeded (const hashcat_ctx_t *hashcat_ctx)
   return exceeded;
 }
 
+// What one base word is worth on the device, as the run addresses it.
+// user_options_extra_amplifier () has answered that for every other caller since the amplifying
+// feeds arrived, and this file carried three hand-rolled copies of it. The PCFG arm had to be added
+// to each of the three separately.
+
+static u128 status_candidates_per_salt (const hashcat_ctx_t *hashcat_ctx, const u128 base_words, bool *overflow)
+{
+  const u64 amplifier = user_options_extra_amplifier ((hashcat_ctx_t *) hashcat_ctx);
+
+  if (overflow_check_u128_mul (base_words, amplifier) == true) *overflow = true;
+
+  const u128 candidates = base_words * amplifier;
+
+  return candidates;
+}
+
+// The keyspace one salt is measured against, in candidates. Without --limit that is words_cnt, which
+// counts candidates already, and KEYSPACE_UNSIZED there is how a producer says it cannot count itself.
+// A --stdin-count hint is not a keyspace, and each caller puts that where it belongs for itself.
+
+static u128 status_end_per_salt (const hashcat_ctx_t *hashcat_ctx, bool *overflow)
+{
+  const status_ctx_t *status_ctx = hashcat_ctx->status_ctx;
+
+  if (status_ctx->words_limit)
+  {
+    const u128 base_words = MIN (status_ctx->words_limit, status_ctx->words_base);
+
+    const u128 candidates = status_candidates_per_salt (hashcat_ctx, base_words, overflow);
+
+    return candidates;
+  }
+
+  if (status_ctx->words_cnt == KEYSPACE_UNSIZED) return 0;
+
+  return status_ctx->words_cnt;
+}
+
+// What --skip leaves out, for one salt, in candidates.
+
+static u128 status_skip_per_salt (const hashcat_ctx_t *hashcat_ctx, bool *overflow)
+{
+  const status_ctx_t *status_ctx = hashcat_ctx->status_ctx;
+
+  if (status_ctx->words_skip == 0) return 0;
+
+  const u128 base_words = MIN (status_ctx->words_skip, status_ctx->words_base);
+
+  const u128 candidates = status_candidates_per_salt (hashcat_ctx, base_words, overflow);
+
+  return candidates;
+}
+
+// Progress counts one candidate per salt, so a per salt figure becomes a whole run figure here. A per
+// salt keyspace fits the keyspace type, because a mask that does not fit is refused in mpsp.c and a
+// product that does not fit is unsized. The salt count can still take the whole run past 2^128.
+//
+// -a 9 is the exception. Word N is the guess for salt N and nothing else, so its figure is whole
+// already.
+
+static u128 status_salts_mul (const hashcat_ctx_t *hashcat_ctx, const u128 per_salt, bool *overflow)
+{
+  const hashes_t       *hashes       = hashcat_ctx->hashes;
+  const user_options_t *user_options = hashcat_ctx->user_options;
+
+  if (user_options->attack_mode == ATTACK_MODE_ASSOCIATION) return per_salt;
+
+  if (overflow_check_u128_mul (per_salt, hashes->salts_cnt) == true) *overflow = true;
+
+  const u128 whole = per_salt * hashes->salts_cnt;
+
+  return whole;
+}
+
+// The total a run is measured against, less what --skip takes off each salt before the salt count
+// goes on. A skip of zero gives the whole total, which is what status_get_progress_end () reports,
+// and the real skip gives the figure the status view shows.
+//
+// Taking it off per salt is the point. A whole run total can overflow where what is left after a skip
+// does not. Subtracting two figures that have each already wrapped is right only while their
+// difference fits, and nothing downstream can tell when it stopped being right.
+
+static u128 status_progress_end_less (const hashcat_ctx_t *hashcat_ctx, const u128 skip_per_salt, bool *overflow)
+{
+  const status_ctx_t         *status_ctx         = hashcat_ctx->status_ctx;
+  const user_options_extra_t *user_options_extra = hashcat_ctx->user_options_extra;
+
+  u128 per_salt = 0;
+
+  // -a 9 splitting its own hash file runs its phases as one attack, so the progress it counts is the
+  // whole run and the total it is measured against has to be the whole run too.
+  //
+  // It used to multiply this phase by the number of phases, which was right while a phase was one word
+  // position and every one of them was the same size. Phases are not: running a rule list over every
+  // hash is a thousand times the work of trying the words alone, and the grammar phase has no end at
+  // all. Multiplying therefore made a finished phase read as a fraction of itself.
+  //
+  // The total is everything sized so far instead, which is what words_walk_cnt already holds. It is not
+  // known in full at the start, because sizing a phase means opening it and the grammar phase takes
+  // seconds to load, so it grows when a phase opens. What that buys is a progress that never resets and
+  // never goes backwards, and a percentage that is honest about the work hashcat has actually measured.
+  //
+  // --limit is left alone. It is refused for more than one phase, so where it applies there is only one
+  // phase and the two answers are the same anyway.
+  //
+  // A queue holding a phase that cannot be sized leaves the sum unsized, and then there is no
+  // denominator to give. Zero is how the rest of this file says that, and the progress line prints the
+  // count on its own, which is what every attack hashcat cannot size already does.
+
+  if ((user_options_extra->association_autosplit == true) && (status_ctx->words_limit == 0))
+  {
+    per_salt = (status_ctx->words_walk_cnt == KEYSPACE_UNSIZED) ? 0 : status_ctx->words_walk_cnt;
+  }
+
+  // A pipe cannot say how long it is, so --stdin-count says it instead. The hint is only shown, never
+  // handed to dispatch, which reads the pipe to its end whatever it says. Once the pipe has given more
+  // than that, the hint was wrong and the progress is the count on its own, as it is without one.
+
+  else if (status_get_stdin_count_end (hashcat_ctx) > 0)
+  {
+    per_salt = (status_get_stdin_count_exceeded (hashcat_ctx) == true) ? 0 : status_get_stdin_count_words (hashcat_ctx);
+  }
+
+  // Only the keyspace answer can overflow when the salt count goes on, so only this arm reports it.
+  // The two above are figures of their own and each has been checked where it was made.
+
+  else
+  {
+    per_salt = status_end_per_salt (hashcat_ctx, overflow);
+  }
+
+  const u128 left_per_salt = (per_salt >= skip_per_salt) ? (per_salt - skip_per_salt) : 0;
+
+  const u128 progress_end = status_salts_mul (hashcat_ctx, left_per_salt, overflow);
+
+  return progress_end;
+}
+
+// The figure the status view shows, and whether it fit. The total and the estimate want the same
+// answer, and the estimate also wants to know which kind of missing it is.
+
+static u128 status_end_relative_skip (const hashcat_ctx_t *hashcat_ctx, bool *overflow)
+{
+  const u128 skip_per_salt = status_skip_per_salt (hashcat_ctx, overflow);
+
+  const u128 relative = status_progress_end_less (hashcat_ctx, skip_per_salt, overflow);
+
+  return relative;
+}
+
+// An estimate at or past the age of the universe is shown as the Next Big Bang and needs no figure of
+// its own. Every value below that fits a u64, and a 64-bit time_t through it. The seconds are worked
+// out as a double, because a u64 of milliseconds runs out at about 585 million years.
+
+static time_t status_msec_to_sec (const double msec)
+{
+  const double sec_f = msec / 1000;
+
+  if (sec_f >= ETA_SEC_BIG_BANG) return ETA_SEC_UNMEASURABLE;
+
+  const u64 sec_u64 = (u64) sec_f;
+
+  const time_t sec = (time_t) sec_u64;
+
+  return sec;
+}
+
 time_t status_get_sec_etc (const hashcat_ctx_t *hashcat_ctx)
 {
   const status_ctx_t         *status_ctx         = hashcat_ctx->status_ctx;
@@ -1507,26 +1718,35 @@ time_t status_get_sec_etc (const hashcat_ctx_t *hashcat_ctx)
   {
     if (status_ctx->devices_status != STATUS_CRACKED)
     {
-      const u64 progress_cur_relative_skip = status_get_progress_cur_relative_skip (hashcat_ctx);
-      const u64 progress_end_relative_skip = status_get_progress_end_relative_skip (hashcat_ctx);
+      const u128 progress_cur_relative_skip = status_get_progress_cur_relative_skip (hashcat_ctx);
 
-      const u64 progress_ignore = status_get_progress_ignore (hashcat_ctx);
+      bool overflow = false;
+
+      const u128 progress_end_relative_skip = status_end_relative_skip (hashcat_ctx, &overflow);
+
+      const u128 progress_ignore = status_get_progress_ignore (hashcat_ctx);
 
       const double hashes_msec_all = status_get_hashes_msec_all (hashcat_ctx);
 
+      // The two reasons a total can be missing want opposite estimates. A pipe cannot say how long it
+      // is, so there is nothing to estimate and zero is the answer. A total that overflowed is the
+      // other way round: the figure is missing because more candidates are left than the type holds,
+      // and zero there would read as a run about to finish. --bypass-eta compares this, so zero also
+      // stopped it dropping the one queue item it was set for.
+
+      if ((overflow == true) && (hashes_msec_all > 0)) return ETA_SEC_UNMEASURABLE;
+
       if ((progress_end_relative_skip) > 0 && (hashes_msec_all > 0))
       {
-        const u64 progress_left_relative_skip = progress_end_relative_skip - progress_cur_relative_skip;
+        const u128 progress_left_relative_skip = progress_end_relative_skip - progress_cur_relative_skip;
 
-        // Salts are worked one after another, so a live salt can pass --stdin-count before a cracked
-        // salt later in the order is credited with the words it skipped. The work ignored is then more
-        // than the work left, and there is no estimate to give.
+        // The work ignored can be more than the work left, and there is then no estimate to give.
 
         if (progress_ignore > progress_left_relative_skip) return 0;
 
-        u64 msec_left = (u64) ((progress_left_relative_skip - progress_ignore) / hashes_msec_all);
+        const double msec_left_f = (double) (progress_left_relative_skip - progress_ignore) / hashes_msec_all;
 
-        sec_etc = msec_left / 1000;
+        sec_etc = status_msec_to_sec (msec_left_f);
       }
     }
   }
@@ -1534,28 +1754,28 @@ time_t status_get_sec_etc (const hashcat_ctx_t *hashcat_ctx)
   return sec_etc;
 }
 
-u64 status_get_queue_keyspace (const hashcat_ctx_t *hashcat_ctx)
+u128 status_get_queue_keyspace (const hashcat_ctx_t *hashcat_ctx)
 {
   const hashes_t     *hashes     = hashcat_ctx->hashes;
   const status_ctx_t *status_ctx = hashcat_ctx->status_ctx;
 
-  // Zero and (u64) -1 are how mask_ctx_queue_keyspace () says there is no answer: no queue of
-  // masks, or a sum that did not fit.
+  // Zero and KEYSPACE_UNSIZED are how mask_ctx_queue_keyspace () says there is no answer: no queue
+  // of masks, or a sum that did not fit.
 
   if (status_ctx->words_queue_cnt == 0) return 0;
-  if (status_ctx->words_queue_cnt == (u64) -1) return 0;
+  if (status_ctx->words_queue_cnt == KEYSPACE_UNSIZED) return 0;
 
   // Progress counts one candidate per salt, so the total the queue is measured against counts them
   // too.
 
-  if (overflow_check_u64_mul (status_ctx->words_queue_cnt, hashes->salts_cnt) == true) return 0;
+  if (overflow_check_u128_mul (status_ctx->words_queue_cnt, hashes->salts_cnt) == true) return 0;
 
-  const u64 queue_keyspace = status_ctx->words_queue_cnt * hashes->salts_cnt;
+  const u128 queue_keyspace = status_ctx->words_queue_cnt * hashes->salts_cnt;
 
   return queue_keyspace;
 }
 
-u64 status_get_queue_progress_done (const hashcat_ctx_t *hashcat_ctx)
+u128 status_get_queue_progress_done (const hashcat_ctx_t *hashcat_ctx)
 {
   const hashes_t     *hashes     = hashcat_ctx->hashes;
   const status_ctx_t *status_ctx = hashcat_ctx->status_ctx;
@@ -1566,9 +1786,9 @@ u64 status_get_queue_progress_done (const hashcat_ctx_t *hashcat_ctx)
   // back out and adding what of it has actually run gives the queue-wide counterpart of
   // status_get_progress_cur ().
 
-  u64 words_prev = 0;
+  u128 words_prev = 0;
 
-  if ((status_ctx->words_walk_cnt != (u64) -1) && (status_ctx->words_cnt != (u64) -1))
+  if ((status_ctx->words_walk_cnt != KEYSPACE_UNSIZED) && (status_ctx->words_cnt != KEYSPACE_UNSIZED))
   {
     if (status_ctx->words_walk_cnt >= status_ctx->words_cnt)
     {
@@ -1576,13 +1796,13 @@ u64 status_get_queue_progress_done (const hashcat_ctx_t *hashcat_ctx)
     }
   }
 
-  u64 queue_done = status_get_progress_cur (hashcat_ctx);
+  u128 queue_done = status_get_progress_cur (hashcat_ctx);
 
-  if (overflow_check_u64_mul (words_prev, hashes->salts_cnt) == false)
+  if (overflow_check_u128_mul (words_prev, hashes->salts_cnt) == false)
   {
-    const u64 prev_cnt = words_prev * hashes->salts_cnt;
+    const u128 prev_cnt = words_prev * hashes->salts_cnt;
 
-    if (overflow_check_u64_add (queue_done, prev_cnt) == false)
+    if (overflow_check_u128_add (queue_done, prev_cnt) == false)
     {
       queue_done += prev_cnt;
     }
@@ -1597,26 +1817,26 @@ time_t status_get_sec_etc_queue (const hashcat_ctx_t *hashcat_ctx)
 
   time_t sec_etc = 0;
 
-  const u64 queue_keyspace = status_get_queue_keyspace (hashcat_ctx);
+  const u128 queue_keyspace = status_get_queue_keyspace (hashcat_ctx);
 
   if (queue_keyspace > 0)
   {
     if (status_ctx->devices_status != STATUS_CRACKED)
     {
-      const u64 queue_done = status_get_queue_progress_done (hashcat_ctx);
+      const u128 queue_done = status_get_queue_progress_done (hashcat_ctx);
 
       const double hashes_msec_all = status_get_hashes_msec_all (hashcat_ctx);
 
       if ((queue_keyspace > queue_done) && (hashes_msec_all > 0))
       {
-        u64 queue_left = queue_keyspace - queue_done;
+        const u128 queue_left = queue_keyspace - queue_done;
 
         // A cracked salt is skipped for the rest of the round in progress and for every round after
         // it, so its work comes out of the estimate the way status_get_progress_ignore () leaves it
         // out of Time.Estimated. The rounds after the one in progress are sized per salt, and each
         // cracked salt takes their whole keyspace with it.
 
-        u64 progress_ignore = status_get_progress_ignore (hashcat_ctx);
+        u128 progress_ignore = status_get_progress_ignore (hashcat_ctx);
 
         const hashes_t   *hashes   = hashcat_ctx->hashes;
         const mask_ctx_t *mask_ctx = hashcat_ctx->mask_ctx;
@@ -1630,17 +1850,17 @@ time_t status_get_sec_etc_queue (const hashcat_ctx_t *hashcat_ctx)
             // The prefix sums were sized once at init, so this is a plain read, safe on the
             // status thread.
 
-            const u64 prefix_cnt = mask_ctx->masks_prefix_cnt[mask_ctx->masks_pos + 1];
+            const u128 prefix_cnt = mask_ctx->masks_prefix_cnt[mask_ctx->masks_pos + 1];
 
-            if ((prefix_cnt != UINT64_MAX) && (status_ctx->words_queue_cnt >= prefix_cnt))
+            if ((prefix_cnt != KEYSPACE_UNSIZED) && (status_ctx->words_queue_cnt >= prefix_cnt))
             {
-              const u64 rounds_left_cnt = status_ctx->words_queue_cnt - prefix_cnt;
+              const u128 rounds_left_cnt = status_ctx->words_queue_cnt - prefix_cnt;
 
-              if (overflow_check_u64_mul (rounds_left_cnt, cracked_cnt) == false)
+              if (overflow_check_u128_mul (rounds_left_cnt, cracked_cnt) == false)
               {
-                const u64 queue_ignore = rounds_left_cnt * cracked_cnt;
+                const u128 queue_ignore = rounds_left_cnt * cracked_cnt;
 
-                if (overflow_check_u64_add (progress_ignore, queue_ignore) == false)
+                if (overflow_check_u128_add (progress_ignore, queue_ignore) == false)
                 {
                   progress_ignore += queue_ignore;
                 }
@@ -1654,9 +1874,9 @@ time_t status_get_sec_etc_queue (const hashcat_ctx_t *hashcat_ctx)
 
         if (progress_ignore > queue_left) return 0;
 
-        const u64 msec_left = (u64) ((queue_left - progress_ignore) / hashes_msec_all);
+        const double msec_left_f = (double) (queue_left - progress_ignore) / hashes_msec_all;
 
-        sec_etc = msec_left / 1000;
+        sec_etc = status_msec_to_sec (msec_left_f);
       }
     }
   }
@@ -1673,9 +1893,17 @@ static char *status_format_time_estimated_absolute (const time_t sec_etc)
 
   char *etc;
 
-  if (overflow_check_u64_add (now, sec_etc) == true)
+  if ((double) sec_etc >= ETA_SEC_BIG_BANG)
   {
     etc = (char *) ETA_ABSOLUTE_MAX_EXCEEDED;
+  }
+  else if ((double) sec_etc >= ETA_SEC_CENTURY)
+  {
+    etc = (char *) ETA_ABSOLUTE_CENTURY;
+  }
+  else if (overflow_check_u64_add (now, sec_etc) == true)
+  {
+    etc = (char *) ETA_ABSOLUTE_CENTURY;
   }
   else
   {
@@ -1683,7 +1911,7 @@ static char *status_format_time_estimated_absolute (const time_t sec_etc)
 
     etc = ctime_r (&end, buf);
 
-    if (etc == NULL) etc = (char *) ETA_ABSOLUTE_MAX_EXCEEDED;
+    if (etc == NULL) etc = (char *) ETA_ABSOLUTE_CENTURY;
   }
 
   const size_t etc_len = strlen (etc);
@@ -1718,18 +1946,21 @@ static char *status_format_time_estimated_relative (const hashcat_ctx_t *hashcat
 
   char *display = (char *) hcmalloc (HCBUFSIZ_TINY);
 
-  struct tm *tmp;
-  struct tm  tm;
-
-  tmp = gmtime_r (&sec_etc, &tm);
-
-  if (tmp == NULL)
+  if ((double) sec_etc >= ETA_SEC_BIG_BANG)
   {
     snprintf (display, HCBUFSIZ_TINY, "%s", ETA_RELATIVE_MAX_EXCEEDED);
   }
+  else if ((double) sec_etc >= ETA_SEC_CENTURY)
+  {
+    snprintf (display, HCBUFSIZ_TINY, "%s", ETA_RELATIVE_CENTURY);
+  }
   else
   {
-    format_timer_display (tmp, display, HCBUFSIZ_TINY);
+    struct tm  tm;
+    struct tm *tmp = gmtime_r (&sec_etc, &tm);
+
+    if (tmp == NULL) snprintf (display, HCBUFSIZ_TINY, "%s", ETA_RELATIVE_CENTURY);
+    else             format_timer_display (tmp, display, HCBUFSIZ_TINY);
   }
 
   if (user_options->runtime > 0)
@@ -1784,16 +2015,16 @@ char *status_get_time_estimated_relative_queue (const hashcat_ctx_t *hashcat_ctx
   return display;
 }
 
-u64 status_get_restore_point (const hashcat_ctx_t *hashcat_ctx)
+u128 status_get_restore_point (const hashcat_ctx_t *hashcat_ctx)
 {
   const status_ctx_t *status_ctx = hashcat_ctx->status_ctx;
 
-  const u64 restore_point = status_ctx->words_cur;
+  const u128 restore_point = status_ctx->words_cur;
 
   return restore_point;
 }
 
-u64 status_get_restore_total (const hashcat_ctx_t *hashcat_ctx)
+u128 status_get_restore_total (const hashcat_ctx_t *hashcat_ctx)
 {
   const status_ctx_t   *status_ctx   = hashcat_ctx->status_ctx;
   const user_options_t *user_options = hashcat_ctx->user_options;
@@ -1801,7 +2032,7 @@ u64 status_get_restore_total (const hashcat_ctx_t *hashcat_ctx)
   // A pipe's words_base is the unknown keyspace. The hint counts the same base words the restore
   // point does, so under --stdin-count it is the total.
 
-  const u64 restore_total = (status_get_stdin_count_end (hashcat_ctx) > 0) ? user_options->stdin_count : status_ctx->words_base;
+  const u128 restore_total = (status_get_stdin_count_end (hashcat_ctx) > 0) ? user_options->stdin_count : status_ctx->words_base;
 
   return restore_total;
 }
@@ -1810,8 +2041,8 @@ double status_get_restore_percent (const hashcat_ctx_t *hashcat_ctx)
 {
   double restore_percent = 0;
 
-  const u64 restore_point = status_get_restore_point (hashcat_ctx);
-  const u64 restore_total = status_get_restore_total (hashcat_ctx);
+  const u128 restore_point = status_get_restore_point (hashcat_ctx);
+  const u128 restore_total = status_get_restore_total (hashcat_ctx);
 
   if (restore_total > 0)
   {
@@ -1823,7 +2054,7 @@ double status_get_restore_percent (const hashcat_ctx_t *hashcat_ctx)
 
 int status_get_progress_mode (const hashcat_ctx_t *hashcat_ctx)
 {
-  const u64 progress_end_relative_skip = status_get_progress_end_relative_skip (hashcat_ctx);
+  const u128 progress_end_relative_skip = status_get_progress_end_relative_skip (hashcat_ctx);
 
   if (progress_end_relative_skip > 0)
   {
@@ -1834,8 +2065,8 @@ int status_get_progress_mode (const hashcat_ctx_t *hashcat_ctx)
 
 double status_get_progress_finished_percent (const hashcat_ctx_t *hashcat_ctx)
 {
-  const u64 progress_cur_relative_skip = status_get_progress_cur_relative_skip (hashcat_ctx);
-  const u64 progress_end_relative_skip = status_get_progress_end_relative_skip (hashcat_ctx);
+  const u128 progress_cur_relative_skip = status_get_progress_cur_relative_skip (hashcat_ctx);
+  const u128 progress_end_relative_skip = status_get_progress_end_relative_skip (hashcat_ctx);
 
   double progress_finished_percent = 0;
 
@@ -1847,12 +2078,12 @@ double status_get_progress_finished_percent (const hashcat_ctx_t *hashcat_ctx)
   return progress_finished_percent;
 }
 
-u64 status_get_progress_done (const hashcat_ctx_t *hashcat_ctx)
+u128 status_get_progress_done (const hashcat_ctx_t *hashcat_ctx)
 {
   const hashes_t     *hashes     = hashcat_ctx->hashes;
   const status_ctx_t *status_ctx = hashcat_ctx->status_ctx;
 
-  u64 progress_done = 0;
+  u128 progress_done = 0;
 
   for (u32 salt_pos = 0; salt_pos < hashes->salts_cnt; salt_pos++)
   {
@@ -1862,12 +2093,12 @@ u64 status_get_progress_done (const hashcat_ctx_t *hashcat_ctx)
   return progress_done;
 }
 
-u64 status_get_progress_rejected (const hashcat_ctx_t *hashcat_ctx)
+u128 status_get_progress_rejected (const hashcat_ctx_t *hashcat_ctx)
 {
   const hashes_t     *hashes     = hashcat_ctx->hashes;
   const status_ctx_t *status_ctx = hashcat_ctx->status_ctx;
 
-  u64 progress_rejected = 0;
+  u128 progress_rejected = 0;
 
   for (u32 salt_pos = 0; salt_pos < hashes->salts_cnt; salt_pos++)
   {
@@ -1878,7 +2109,7 @@ u64 status_get_progress_rejected (const hashcat_ctx_t *hashcat_ctx)
 }
 
 #ifdef WITH_BRAIN
-u64 status_get_brain_rejects_attacks (const hashcat_ctx_t *hashcat_ctx)
+u128 status_get_brain_rejects_attacks (const hashcat_ctx_t *hashcat_ctx)
 {
   const status_ctx_t *status_ctx = hashcat_ctx->status_ctx;
 
@@ -1899,8 +2130,8 @@ double status_get_progress_rejected_percent (const hashcat_ctx_t *hashcat_ctx)
   // measured against the work this run was asked for. Measuring the percentage against the whole
   // keyspace instead made the two disagree as soon as --skip left anything out.
 
-  const u64 progress_cur_relative_skip = status_get_progress_cur_relative_skip (hashcat_ctx);
-  const u64 progress_rejected          = status_get_progress_rejected          (hashcat_ctx);
+  const u128 progress_cur_relative_skip = status_get_progress_cur_relative_skip (hashcat_ctx);
+  const u128 progress_rejected          = status_get_progress_rejected          (hashcat_ctx);
 
   double percent_rejected = 0;
 
@@ -1912,12 +2143,12 @@ double status_get_progress_rejected_percent (const hashcat_ctx_t *hashcat_ctx)
   return percent_rejected;
 }
 
-u64 status_get_progress_restored (const hashcat_ctx_t *hashcat_ctx)
+u128 status_get_progress_restored (const hashcat_ctx_t *hashcat_ctx)
 {
   const hashes_t     *hashes     = hashcat_ctx->hashes;
   const status_ctx_t *status_ctx = hashcat_ctx->status_ctx;
 
-  u64 progress_restored = 0;
+  u128 progress_restored = 0;
 
   for (u32 salt_pos = 0; salt_pos < hashes->salts_cnt; salt_pos++)
   {
@@ -1927,23 +2158,22 @@ u64 status_get_progress_restored (const hashcat_ctx_t *hashcat_ctx)
   return progress_restored;
 }
 
-u64 status_get_progress_cur (const hashcat_ctx_t *hashcat_ctx)
+u128 status_get_progress_cur (const hashcat_ctx_t *hashcat_ctx)
 {
-  const u64 progress_done     = status_get_progress_done     (hashcat_ctx);
-  const u64 progress_rejected = status_get_progress_rejected (hashcat_ctx);
-  const u64 progress_restored = status_get_progress_restored (hashcat_ctx);
+  const u128 progress_done     = status_get_progress_done     (hashcat_ctx);
+  const u128 progress_rejected = status_get_progress_rejected (hashcat_ctx);
+  const u128 progress_restored = status_get_progress_restored (hashcat_ctx);
 
-  const u64 progress_cur = progress_done + progress_rejected + progress_restored;
+  const u128 progress_cur = progress_done + progress_rejected + progress_restored;
 
   return progress_cur;
 }
 
-u64 status_get_progress_ignore (const hashcat_ctx_t *hashcat_ctx)
+u128 status_get_progress_ignore (const hashcat_ctx_t *hashcat_ctx)
 {
-  const hashes_t             *hashes             = hashcat_ctx->hashes;
-  const status_ctx_t         *status_ctx         = hashcat_ctx->status_ctx;
-  const user_options_t       *user_options       = hashcat_ctx->user_options;
-  const user_options_extra_t *user_options_extra = hashcat_ctx->user_options_extra;
+  const hashes_t       *hashes       = hashcat_ctx->hashes;
+  const status_ctx_t   *status_ctx   = hashcat_ctx->status_ctx;
+  const user_options_t *user_options = hashcat_ctx->user_options;
 
   if (user_options->attack_mode == ATTACK_MODE_ASSOCIATION)
   {
@@ -1953,59 +2183,32 @@ u64 status_get_progress_ignore (const hashcat_ctx_t *hashcat_ctx)
     return 0;
   }
 
-  u64 words_cnt = status_ctx->words_cnt;
+  // Per salt, so the salt count never goes on and this figure cannot overflow. What it is summed into
+  // below is bounded by the total, so once that reports no answer the sum is never read.
 
-  if (words_cnt == -1ULL) words_cnt = 0;
+  bool overflow = false;
+
+  u128 words_cnt = status_end_per_salt (hashcat_ctx, &overflow);
 
   // A pipe has no words_cnt, so what is left of a cracked salt would be counted down from zero and
-  // wrap. The hint stands in for it.
+  // wrap. The hint stands in for it. A --limit answers before the hint does, which is what the order
+  // here used to say by overwriting.
 
-  if (status_get_stdin_count_end (hashcat_ctx) > 0) words_cnt = status_get_stdin_count_words (hashcat_ctx);
+  if ((status_ctx->words_limit == 0) && (status_get_stdin_count_end (hashcat_ctx) > 0)) words_cnt = status_get_stdin_count_words (hashcat_ctx);
 
-  if (status_ctx->words_limit)
-  {
-    const combinator_ctx_t *combinator_ctx = hashcat_ctx->combinator_ctx;
-    const mask_ctx_t       *mask_ctx       = hashcat_ctx->mask_ctx;
-    const straight_ctx_t   *straight_ctx   = hashcat_ctx->straight_ctx;
-
-    words_cnt = MIN (status_ctx->words_limit, status_ctx->words_base);
-
-    if (user_options->slow_candidates == true)
-    {
-      // nothing to do
-    }
-    else
-    {
-      if      (user_options_extra->attack_kern == ATTACK_KERN_STRAIGHT) words_cnt  *= straight_ctx->kernel_rules_cnt;
-      else if (user_options_extra->attack_kern == ATTACK_KERN_COMBI)    words_cnt  *= combinator_ctx->combs_cnt;
-      else if (user_options_extra->attack_kern == ATTACK_KERN_BF)       words_cnt  *= mask_ctx->bfs_cnt;
-
-      // What a salt has done is counted in candidates, so a limit left in base words is smaller than
-      // that and the subtraction below wraps as soon as the device engine cracks a salt.
-
-      else if (user_options_extra->attack_kern == ATTACK_KERN_PCFG)
-      {
-        u64 amplifier = hashcat_ctx->generic_ctx[GENERIC_ROLE_BASE].dev_avg;
-
-        if (hashcat_ctx->generic_ctx[GENERIC_ROLE_BASE].global_ctx.dev_rules == true) amplifier *= straight_ctx->kernel_rules_cnt;
-
-        words_cnt *= amplifier;
-      }
-    }
-  }
   // Important for ETA only
 
-  u64 progress_ignore = 0;
+  u128 progress_ignore = 0;
 
   for (u32 salt_pos = 0; salt_pos < hashes->salts_cnt; salt_pos++)
   {
     if (hashes->salts_shown[salt_pos] == 1)
     {
-      const u64 all = status_ctx->words_progress_done[salt_pos]
-                    + status_ctx->words_progress_rejected[salt_pos]
-                    + status_ctx->words_progress_restored[salt_pos];
+      const u128 all = status_ctx->words_progress_done[salt_pos]
+                     + status_ctx->words_progress_rejected[salt_pos]
+                     + status_ctx->words_progress_restored[salt_pos];
 
-      const u64 left = words_cnt - all;
+      const u128 left = words_cnt - all;
 
       progress_ignore += left;
     }
@@ -2014,192 +2217,41 @@ u64 status_get_progress_ignore (const hashcat_ctx_t *hashcat_ctx)
   return progress_ignore;
 }
 
-u64 status_get_progress_end (const hashcat_ctx_t *hashcat_ctx)
+u128 status_get_progress_end (const hashcat_ctx_t *hashcat_ctx)
 {
-  const hashes_t             *hashes             = hashcat_ctx->hashes;
-  const status_ctx_t         *status_ctx         = hashcat_ctx->status_ctx;
-  const user_options_t       *user_options       = hashcat_ctx->user_options;
-  const user_options_extra_t *user_options_extra = hashcat_ctx->user_options_extra;
+  bool overflow = false;
 
-  u64 progress_end = status_ctx->words_cnt;
+  u128 progress_end = status_progress_end_less (hashcat_ctx, 0, &overflow);
 
-  if (progress_end == -1ULL) progress_end = 0;
+  // Zero is how this file says a figure has no answer, and status_get_progress_mode () reports an
+  // unknown keyspace for it rather than a wrapped total with a percentage taken from it.
 
-  if (user_options->attack_mode == ATTACK_MODE_ASSOCIATION)
-  {
-    // nothing to do
-  }
-  else
-  {
-    progress_end *= hashes->salts_cnt;
-  }
-
-  if (status_ctx->words_limit)
-  {
-    const combinator_ctx_t *combinator_ctx = hashcat_ctx->combinator_ctx;
-    const mask_ctx_t       *mask_ctx       = hashcat_ctx->mask_ctx;
-    const straight_ctx_t   *straight_ctx   = hashcat_ctx->straight_ctx;
-
-    progress_end = MIN (status_ctx->words_limit, status_ctx->words_base);
-
-    if (user_options->attack_mode == ATTACK_MODE_ASSOCIATION)
-    {
-      // nothing to do
-    }
-    else
-    {
-      progress_end *= hashes->salts_cnt;
-    }
-
-    if (user_options->slow_candidates == true)
-    {
-      // nothing to do
-    }
-    else
-    {
-      if      (user_options_extra->attack_kern == ATTACK_KERN_STRAIGHT) progress_end  *= straight_ctx->kernel_rules_cnt;
-      else if (user_options_extra->attack_kern == ATTACK_KERN_COMBI)    progress_end  *= combinator_ctx->combs_cnt;
-      else if (user_options_extra->attack_kern == ATTACK_KERN_BF)       progress_end  *= mask_ctx->bfs_cnt;
-
-      // The device engine expands a base word the same way, and --skip and --limit count base words for it
-      // as they do for every other mode. Without this the total stayed in base words while the
-      // progress counted candidates, so --limit 200000 reported 208122% done.
-      //
-      // dev_avg is the mean cell over the whole keyspace, which is what the unlimited total uses too,
-      // so the two agree. It is still only a mean: the cheap cost levels a run starts in hold cells
-      // several times wider than that, so a limit near the front of the stream reads high. Counting it
-      // exactly needs the feed to say how many candidates lie before a given base word, which the
-      // level index could answer and does not expose.
-
-      else if (user_options_extra->attack_kern == ATTACK_KERN_PCFG)
-      {
-        // And once the rules are applied inside the engine, every candidate the cell makes is tried once
-        // per rule, so what a base word comes to is the mean cell times the ruleset. The mean and the
-        // ruleset are both u32 and their product cannot leave a u64, so the check belongs on the total
-        // below, where --limit takes whatever the user gives it and a wrapped figure would read as a
-        // percentage rather than as the overflow it is.
-
-        u64 amplifier = hashcat_ctx->generic_ctx[GENERIC_ROLE_BASE].dev_avg;
-
-        if (hashcat_ctx->generic_ctx[GENERIC_ROLE_BASE].global_ctx.dev_rules == true)
-        {
-          const u32 rules_cnt = hashcat_ctx->straight_ctx->kernel_rules_cnt;
-
-          amplifier = amplifier * rules_cnt;
-        }
-
-        progress_end = (overflow_check_u64_mul (progress_end, amplifier) == true) ? UINT64_MAX : (progress_end * amplifier);
-      }
-    }
-  }
-
-  // A pipe cannot say how long it is, so --stdin-count says it instead. The hint is only shown, never
-  // handed to dispatch, which reads the pipe to its end whatever it says. Once the pipe has given more
-  // than that, the hint was wrong and the progress is the count on its own, as it is without one.
-
-  const u64 stdin_count_end = status_get_stdin_count_end (hashcat_ctx);
-
-  if (stdin_count_end > 0)
-  {
-    progress_end = (status_get_stdin_count_exceeded (hashcat_ctx) == true) ? 0 : stdin_count_end;
-  }
-
-  // -a 9 splitting its own hash file runs its phases as one attack, so the progress it counts is the
-  // whole run and the total it is measured against has to be the whole run too.
-  //
-  // It used to multiply this phase by the number of phases, which was right while a phase was one word
-  // position and every one of them was the same size. Phases are not: running a rule list over every
-  // hash is a thousand times the work of trying the words alone, and the grammar phase has no end at
-  // all. Multiplying therefore made a finished phase read as a fraction of itself.
-  //
-  // The total is everything sized so far instead, which is what words_walk_cnt already holds. It is not
-  // known in full at the start, because sizing a phase means opening it and the grammar phase takes
-  // seconds to load, so it grows when a phase opens. What that buys is a progress that never resets and
-  // never goes backwards, and a percentage that is honest about the work hashcat has actually measured.
-  //
-  // --limit is left alone. It is refused for more than one phase, so where it applies there is only one
-  // phase and the two answers are the same anyway.
-
-  if (user_options_extra->association_autosplit == true)
-  {
-    if (status_ctx->words_limit == 0)
-    {
-      // A queue holding a phase whose keyspace does not fit a u64 saturates the sum, and then there is
-      // no denominator to give. Zero is how the rest of this function says that, and the progress line
-      // prints the count on its own, which is what every attack hashcat cannot size already does.
-
-      progress_end = (status_ctx->words_walk_cnt == (u64) -1) ? 0 : status_ctx->words_walk_cnt;
-    }
-  }
+  if (overflow == true) progress_end = 0;
 
   return progress_end;
 }
 
-u64 status_get_progress_skip (const hashcat_ctx_t *hashcat_ctx)
+u128 status_get_progress_skip (const hashcat_ctx_t *hashcat_ctx)
 {
-  const hashes_t             *hashes             = hashcat_ctx->hashes;
-  const status_ctx_t         *status_ctx         = hashcat_ctx->status_ctx;
-  const user_options_t       *user_options       = hashcat_ctx->user_options;
-  const user_options_extra_t *user_options_extra = hashcat_ctx->user_options_extra;
+  // This one is allowed to wrap and the flag is ignored on purpose. The status view only ever shows
+  // the skip taken off a counter built the same way, and that subtraction is exact however far either
+  // side wrapped. Reporting no answer here would throw away a figure the counter gets right.
 
-  u64 progress_skip = 0;
+  bool overflow = false;
 
-  // words_skip is this round's share of --skip and not --skip itself, which is a position in the
-  // whole queue of rounds. Reading --skip here also used to read a zero, because it was cleared as
-  // soon as the first round had taken it, so the progress line counted the skipped part as work
-  // already done instead of leaving it out.
+  const u128 skip_per_salt = status_skip_per_salt (hashcat_ctx, &overflow);
 
-  if (status_ctx->words_skip)
-  {
-    const combinator_ctx_t *combinator_ctx = hashcat_ctx->combinator_ctx;
-    const mask_ctx_t       *mask_ctx       = hashcat_ctx->mask_ctx;
-    const straight_ctx_t   *straight_ctx   = hashcat_ctx->straight_ctx;
-
-    progress_skip = MIN (status_ctx->words_skip, status_ctx->words_base);
-
-    if (user_options->attack_mode == ATTACK_MODE_ASSOCIATION)
-    {
-      // nothing to do
-    }
-    else
-    {
-      progress_skip *= hashes->salts_cnt;
-    }
-
-    if (user_options->slow_candidates == true)
-    {
-      // nothing to do
-    }
-    else
-    {
-      if      (user_options_extra->attack_kern == ATTACK_KERN_STRAIGHT) progress_skip *= straight_ctx->kernel_rules_cnt;
-      else if (user_options_extra->attack_kern == ATTACK_KERN_COMBI)    progress_skip *= combinator_ctx->combs_cnt;
-      else if (user_options_extra->attack_kern == ATTACK_KERN_BF)       progress_skip *= mask_ctx->bfs_cnt;
-
-      // The restored progress books a skipped base word of the device engine as its mean cell, times
-      // the ruleset where the engine applies the rules itself. Taking it off in base words left almost
-      // the whole skipped stream in the progress, so -a 4 --skip started far above zero.
-
-      else if (user_options_extra->attack_kern == ATTACK_KERN_PCFG)
-      {
-        u64 amplifier = hashcat_ctx->generic_ctx[GENERIC_ROLE_BASE].dev_avg;
-
-        if (hashcat_ctx->generic_ctx[GENERIC_ROLE_BASE].global_ctx.dev_rules == true) amplifier *= straight_ctx->kernel_rules_cnt;
-
-        progress_skip *= amplifier;
-      }
-    }
-  }
+  const u128 progress_skip = status_salts_mul (hashcat_ctx, skip_per_salt, &overflow);
 
   return progress_skip;
 }
 
-u64 status_get_progress_cur_relative_skip (const hashcat_ctx_t *hashcat_ctx)
+u128 status_get_progress_cur_relative_skip (const hashcat_ctx_t *hashcat_ctx)
 {
-  const u64 progress_skip = status_get_progress_skip (hashcat_ctx);
-  const u64 progress_cur  = status_get_progress_cur  (hashcat_ctx);
+  const u128 progress_skip = status_get_progress_skip (hashcat_ctx);
+  const u128 progress_cur  = status_get_progress_cur  (hashcat_ctx);
 
-  u64 progress_cur_relative_skip = 0;
+  u128 progress_cur_relative_skip = 0;
 
   if (progress_cur > 0)
   {
@@ -2209,17 +2261,17 @@ u64 status_get_progress_cur_relative_skip (const hashcat_ctx_t *hashcat_ctx)
   return progress_cur_relative_skip;
 }
 
-u64 status_get_progress_end_relative_skip (const hashcat_ctx_t *hashcat_ctx)
+u128 status_get_progress_end_relative_skip (const hashcat_ctx_t *hashcat_ctx)
 {
-  const u64 progress_skip = status_get_progress_skip (hashcat_ctx);
-  const u64 progress_end  = status_get_progress_end  (hashcat_ctx);
+  // Taking the skip off while both are still candidates for one salt, before the salt count goes on,
+  // is what makes this exact. A remainder that fits the type is reported whether or not the whole
+  // keyspace does, and only a remainder that does not fit has no answer.
 
-  u64 progress_end_relative_skip = 0;
+  bool overflow = false;
 
-  if (progress_end > 0)
-  {
-    progress_end_relative_skip = progress_end - progress_skip;
-  }
+  u128 progress_end_relative_skip = status_end_relative_skip (hashcat_ctx, &overflow);
+
+  if (overflow == true) progress_end_relative_skip = 0;
 
   return progress_end_relative_skip;
 }
@@ -2311,7 +2363,14 @@ double status_get_hashes_msec_dev_benchmark (const hashcat_ctx_t *hashcat_ctx, c
       rate_best = MAX (rate_best, rate);
     }
 
-    const double rate_floor = rate_best * BENCHMARK_SLOT_FRACTION;
+    // The fastest launches stand for the device when every launch does the same work, as with the one
+    // hash of the benchmark. The salts of a list take turns in the speed ring and can cost different
+    // amounts, so there the fastest launches are only the cheapest salts, and every launch counts. A
+    // device that tests every salt in one launch does the same work in each of them.
+
+    const bool salts_take_turns = (salts_in_turn (hashcat_ctx) > 1) && (device_param->salt_sweep == false);
+
+    const double rate_floor = (salts_take_turns == true) ? 0 : rate_best * BENCHMARK_SLOT_FRACTION;
 
     for (u32 i = 0; i < speed_pos; i++)
     {
@@ -2960,7 +3019,7 @@ void status_curve_sample (hashcat_ctx_t *hashcat_ctx)
   if (cpt_ctx->enabled == false) return;
   if (status_ctx->accessible == false) return;
 
-  const u64 progress = status_get_progress_done (hashcat_ctx);
+  const u128 progress = status_get_progress_done (hashcat_ctx);
 
   if (progress == 0) return;
 
@@ -3849,8 +3908,8 @@ double status_get_progress_only_msec (const hashcat_ctx_t *hashcat_ctx)
 
   if (words_per_msec > 0)
   {
-    const u64 words_end  = (status_ctx->words_limit == 0) ? status_ctx->words_base : MIN (status_ctx->words_limit, status_ctx->words_base);
-    const u64 words_todo = (words_end >= status_ctx->words_skip) ? words_end - status_ctx->words_skip : 0;
+    const u128 words_end  = (status_ctx->words_limit == 0) ? status_ctx->words_base : MIN (status_ctx->words_limit, status_ctx->words_base);
+    const u128 words_todo = (words_end >= status_ctx->words_skip) ? words_end - status_ctx->words_skip : 0;
 
     const double msec_total = (double) words_todo / words_per_msec;
 
@@ -3870,14 +3929,30 @@ char *status_get_progress_only_estimate (const hashcat_ctx_t *hashcat_ctx)
 
   if (msec_total < 0) return display;
 
-  // gmtime_r takes a time_t, and an estimate past what it can hold is shown the way Time.Estimated
-  // shows one
+  // The same markers Time.Estimated shows, at the same two thresholds.
 
   const double sec_total = msec_total / 1000;
 
-  if (sec_total >= (double) INT32_MAX)
+  if (sec_total >= ETA_SEC_BIG_BANG)
   {
     snprintf (display, HCBUFSIZ_TINY, "%s", ETA_RELATIVE_MAX_EXCEEDED);
+
+    return display;
+  }
+
+  if (sec_total >= ETA_SEC_CENTURY)
+  {
+    snprintf (display, HCBUFSIZ_TINY, "%s", ETA_RELATIVE_CENTURY);
+
+    return display;
+  }
+
+  // A 32-bit time_t ends at 68 years, so there a longer estimate takes the century marker early
+  // rather than leaving the time_t range in the conversion for gmtime_r.
+
+  if ((sizeof (time_t) < 8) && (sec_total >= (double) INT32_MAX))
+  {
+    snprintf (display, HCBUFSIZ_TINY, "%s", ETA_RELATIVE_CENTURY);
 
     return display;
   }
@@ -3889,7 +3964,7 @@ char *status_get_progress_only_estimate (const hashcat_ctx_t *hashcat_ctx)
 
   if (tmp == NULL)
   {
-    snprintf (display, HCBUFSIZ_TINY, "%s", ETA_RELATIVE_MAX_EXCEEDED);
+    snprintf (display, HCBUFSIZ_TINY, "%s", ETA_RELATIVE_CENTURY);
 
     return display;
   }
@@ -3991,9 +4066,9 @@ int status_progress_init (hashcat_ctx_t *hashcat_ctx)
   status_ctx_t *status_ctx = hashcat_ctx->status_ctx;
   hashes_t     *hashes     = hashcat_ctx->hashes;
 
-  status_ctx->words_progress_done     = (u64 *) hccalloc (hashes->salts_cnt, sizeof (u64));
-  status_ctx->words_progress_rejected = (u64 *) hccalloc (hashes->salts_cnt, sizeof (u64));
-  status_ctx->words_progress_restored = (u64 *) hccalloc (hashes->salts_cnt, sizeof (u64));
+  status_ctx->words_progress_done     = (u128 *) hccalloc (hashes->salts_cnt, sizeof (u128));
+  status_ctx->words_progress_rejected = (u128 *) hccalloc (hashes->salts_cnt, sizeof (u128));
+  status_ctx->words_progress_restored = (u128 *) hccalloc (hashes->salts_cnt, sizeof (u128));
 
   return 0;
 }
@@ -4016,9 +4091,9 @@ void status_progress_reset (hashcat_ctx_t *hashcat_ctx)
   status_ctx_t *status_ctx = hashcat_ctx->status_ctx;
   hashes_t     *hashes     = hashcat_ctx->hashes;
 
-  memset (status_ctx->words_progress_done,     0, hashes->salts_cnt * sizeof (u64));
-  memset (status_ctx->words_progress_rejected, 0, hashes->salts_cnt * sizeof (u64));
-  memset (status_ctx->words_progress_restored, 0, hashes->salts_cnt * sizeof (u64));
+  memset (status_ctx->words_progress_done,     0, hashes->salts_cnt * sizeof (u128));
+  memset (status_ctx->words_progress_rejected, 0, hashes->salts_cnt * sizeof (u128));
+  memset (status_ctx->words_progress_restored, 0, hashes->salts_cnt * sizeof (u128));
 
   #ifdef WITH_BRAIN
   status_ctx->brain_rejects_attacks = 0;
